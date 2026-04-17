@@ -5657,6 +5657,13 @@ static void     renderDialog()
         glPushMatrix();
         glLoadIdentity();
         OpenGLGState::resetState();
+#ifdef __EMSCRIPTEN__
+        // Ensure clean GL state for 2D overlay rendering under Emscripten's
+        // legacy GL emulation: depth test and lighting must be off so that
+        // menu text quads are not depth-culled or darkened.
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_LIGHTING);
+#endif
         HUDDialogStack::get()->render();
         glPopMatrix();
     }
