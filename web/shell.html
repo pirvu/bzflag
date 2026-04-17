@@ -140,7 +140,7 @@
 <script>
   var Module = {
     canvas: (function() { return document.getElementById('canvas'); })(),
-    arguments: ['-window', '800x600', '-time', '12:00:00', '-longitude', '0', '-nolist', '-mute', 'Player@localhost'],
+    arguments: ['-window', '800x600', '-time', '12:00:00', '-longitude', '0', '-nolist', '-mute', '-solo', '3', 'Player@localhost'],
 
     setStatus: function(text) {
       var el = document.getElementById('loading');
@@ -162,6 +162,9 @@
     c.width = 800; c.height = 600;
     c.addEventListener('click', function() { c.focus(); });
     c.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+    c.addEventListener('keydown', function(e) {
+      if (e.key === 'Tab') e.preventDefault();
+    });
   })();
 </script>
 

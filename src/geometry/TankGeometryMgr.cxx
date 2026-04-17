@@ -182,9 +182,11 @@ void TankGeometryMgr::deleteLists()
 void TankGeometryMgr::buildLists()
 {
 #ifdef __EMSCRIPTEN__
-    // Tank geometry uses mixed texcoord/non-texcoord vertices in glBegin/glEnd
-    // blocks which crashes Emscripten's GL emulation stride calculation.
-    // Skip building tank geometry for now — tanks will be invisible.
+    // Tank geometry uses display lists (glGenLists/glNewList/glCallList) which
+    // are no-ops under Emscripten. The geometry draw calls during buildLists()
+    // go straight to the framebuffer instead of being captured, causing rainbow
+    // artifacts. Skip building entirely — tanks will be invisible until display
+    // list rendering is replaced with VBOs.
     return;
 #endif
     // setup the tread style

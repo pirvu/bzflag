@@ -294,7 +294,9 @@ BZFlag's `-solo N` mode normally `fork()`/`exec()`s a local bzfs server, which i
 - `web/mock-server.js` — Full mock BZFlag server implementing the binary protocol
 - `web/shell.html` — WebSocket interception + Module.arguments for `-solo 3`
 
-**Protocol sequence fix:** The mock server initially sent MsgGameSettings, MsgTeamUpdate, and MsgAddPlayer immediately in the MsgEnter handler. This caused the client to process MsgAddPlayer before the world was downloaded, resulting in `remotePlayers` being NULL → memory access out of bounds crash. Fixed by deferring the state dump (MsgTeamUpdate, MsgAddPlayer, MsgPlayerInfo) until after the last world chunk is delivered (`_handleGetWorld` with `bytesLeft=0`). Robot (ComputerPlayer) connections get immediate MsgAddPlayer broadcast since they don't download the world.
+**Protocol sequence fix:** The mock server initially sent MsgGameSettings, MsgTeamUpdate, and MsgAddPlayer immediately in the MsgEnter handler. This caused the client to process MsgAddPlayer before the world was downloaded, resulting in `remotePlayers` being NULL → memory access out of bounds crash. Fixed by deferring the state dump (MsgTeamUpdate, MsgAddPlayer, MsgPlayerInfo) until after the last world chunk is delivered (`_handleGetWorld` with `bytesLeft=0`).
+
+**Robot timing fix:** Robot connections (ComputerPlayer type) arrive on separate WebSocket connections and complete their own handshake independently. Their MsgAddPlayer broadcasts could reach the human player before `remotePlayers` was allocated (which happens in `joinInternetGame2()` after world download + build). Fixed by queuing MsgAddPlayer for robots until the human player sends its first MsgAlive or MsgPlayerUpdate, which proves `remotePlayers` is allocated. The mock server tracks `humanPlayerReady` flag and `_pendingRobotAddPlayers` queue for this.
 
 **What works:**
 - Player connects and completes the full BZFlag join protocol
@@ -306,6 +308,14 @@ BZFlag's `-solo N` mode normally `fork()`/`exec()`s a local bzfs server, which i
 - Score tracking (kills/deaths)
 - Chat message relay
 - Lag ping echo
+- Tab key works for jumping (browser default prevented on canvas)
+- `-solo 3` launches 3 robot tanks automatically
+
+### Tank geometry rendering restored
+Previously, `TankGeometryMgr::buildLists()` had an early `return;` under `__EMSCRIPTEN__` because mixed texcoord/non-texcoord vertices in `glBegin`/`glEnd` blocks crashed the GL emulation's stride assertion. With `ASSERTIONS=0` already set in CMakeLists.txt, the stride mismatch is silently ignored and tanks render (possibly with minor artifacts). The early return was removed.
+
+### Map obstacles
+The mock server's world data was upgraded from an empty world to include 15 box obstacles (buildings/cover) scattered around the map. The `buildUncompressedWorldData()` function now generates boxes packed in the BZFlag binary format (`float pos[3]`, `float angle`, `float size[3]`, `uint8_t stateByte`) at obstacle type index 1 (boxType) within the root GroupDefinition.
 
 ### What doesn't work yet
 - Display list rendering is stubbed — stars and some background elements are invisible

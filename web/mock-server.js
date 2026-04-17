@@ -97,22 +97,76 @@ const BZ_SERVER_VERSION = 'BZFS0221';         // 8 bytes reply
 // ── Constants for obstacle manager ────────────────────────────────────
 const ObstacleTypeCount = 10; // wallType through tetraType
 
+// ── Helper: generate boundary walls ──────────────────────────────────
+// WallObstacle::unpack: float pos[3], float angle, float breadth, float height, uint8 stateByte = 25 bytes
+function generateBoundaryWalls(worldSize) {
+  const half = worldSize / 2;
+  const height = 100;
+  return [
+    { pos: [0, half, 0],   angle: Math.PI / 2,  breadth: half, height },   // North
+    { pos: [0, -half, 0],  angle: -Math.PI / 2, breadth: half, height },   // South
+    { pos: [half, 0, 0],   angle: 0,            breadth: half, height },   // East
+    { pos: [-half, 0, 0],  angle: Math.PI,      breadth: half, height },   // West
+  ];
+}
+
+// ── Helper: generate map boxes ───────────────────────────────────────
+function generateMapBoxes(worldSize) {
+  const boxes = [];
+  const half = worldSize / 2 * 0.8;
+
+  // Central structures — a few tall buildings in the middle
+  boxes.push({ pos: [0, 0, 0], angle: 0, size: [10, 10, 30] });
+  boxes.push({ pos: [40, 40, 0], angle: 0.785, size: [8, 8, 20] });
+  boxes.push({ pos: [-40, -40, 0], angle: 0.785, size: [8, 8, 20] });
+
+  // Scattered cover around the map
+  boxes.push({ pos: [80, 0, 0], angle: 0, size: [15, 5, 10] });
+  boxes.push({ pos: [-80, 0, 0], angle: 0, size: [15, 5, 10] });
+  boxes.push({ pos: [0, 80, 0], angle: 1.571, size: [15, 5, 10] });
+  boxes.push({ pos: [0, -80, 0], angle: 1.571, size: [15, 5, 10] });
+
+  // Corner bunkers
+  boxes.push({ pos: [120, 120, 0], angle: 0.785, size: [12, 12, 8] });
+  boxes.push({ pos: [-120, -120, 0], angle: 0.785, size: [12, 12, 8] });
+  boxes.push({ pos: [120, -120, 0], angle: -0.785, size: [12, 12, 8] });
+  boxes.push({ pos: [-120, 120, 0], angle: -0.785, size: [12, 12, 8] });
+
+  // Small scattered boxes for additional cover
+  boxes.push({ pos: [60, -60, 0], angle: 0.3, size: [6, 6, 15] });
+  boxes.push({ pos: [-60, 60, 0], angle: -0.3, size: [6, 6, 15] });
+  boxes.push({ pos: [150, 50, 0], angle: 0, size: [20, 3, 6] });  // long wall
+  boxes.push({ pos: [-150, -50, 0], angle: 0, size: [20, 3, 6] }); // long wall
+
+  return boxes;
+}
+
 // ── Helper: build the uncompressed world data ────────────────────────
-// This must match what WorldInfo::packDatabase() produces for an empty world.
+// This must match what WorldInfo::packDatabase() produces.
 // Order: DynColorMgr, TexMatrixMgr, MaterialMgr, PhysDrvMgr, TransformMgr,
 //        ObstacleMgr (root GroupDef), LinkManager, waterLevel, Weapons, EntryZones
-function buildUncompressedWorldData() {
+function buildUncompressedWorldData(worldSize) {
+  const ws = worldSize || 400;
+  const walls = generateBoundaryWalls(ws);
+  const boxes = generateMapBoxes(ws);
+  const wallDataSize = 25; // float pos[3] + float angle + float breadth + float height + u8 state = 25
+  const boxDataSize = 29;  // float pos[3] + float angle + float size[3] + u8 state = 29
+
   // Calculate size:
   // 5 managers × 4 bytes (u32 count=0) = 20
   // ObstacleMgr (GroupDefinitionMgr::unpack):
-  //   root GroupDefinition: u32 nameLen=0 + 10×u32 counts + u32 groupInstanceCount = 48
+  //   root GroupDefinition:
+  //     u32 nameLen=0 = 4
+  //     10 × u32 counts = 40
+  //     wall data: walls.length × 25
+  //     box data: boxes.length × 29
+  //     u32 groupInstanceCount = 4
   //   additional group defs count: u32 = 4
   // Links: u32=0 = 4
   // WaterLevel: float=-1.0 = 4
   // Weapons: u32=0 = 4
   // EntryZones: u32=0 = 4
-  // Total = 88
-  const size = 20 + 48 + 4 + 4 + 4 + 4 + 4;
+  const size = 20 + 4 + 40 + (walls.length * wallDataSize) + (boxes.length * boxDataSize) + 4 + 4 + 4 + 4 + 4 + 4;
   const buf = new ArrayBuffer(size);
   const view = new DataView(buf);
   let off = 0;
@@ -124,8 +178,40 @@ function buildUncompressedWorldData() {
   // 1) root GroupDefinition (world.unpack)
   // name: nboPackStdString packs u32 length + string bytes. Empty string = u32(0).
   view.setUint32(off, 0); off += 4;  // name length = 0
-  // 10 obstacle type counts (all 0)
-  for (let i = 0; i < ObstacleTypeCount; i++) { view.setUint32(off, 0); off += 4; }
+
+  // 10 obstacle type counts: wall(0), box(1), pyr(2), base(3), tele(4),
+  // mesh(5), arc(6), cone(7), sphere(8), tetra(9)
+  for (let i = 0; i < ObstacleTypeCount; i++) {
+    if (i === 0) { // wallType
+      view.setUint32(off, walls.length); off += 4;
+      // Pack each wall: float pos[3], float angle, float breadth, float height, u8 stateByte
+      for (const wall of walls) {
+        view.setFloat32(off, wall.pos[0]);    off += 4;
+        view.setFloat32(off, wall.pos[1]);    off += 4;
+        view.setFloat32(off, wall.pos[2]);    off += 4;
+        view.setFloat32(off, wall.angle);     off += 4;
+        view.setFloat32(off, wall.breadth);   off += 4;
+        view.setFloat32(off, wall.height);    off += 4;
+        view.setUint8(off, 0); off += 1;     // stateByte: no ricochet on walls
+      }
+    } else if (i === 1) { // boxType
+      view.setUint32(off, boxes.length); off += 4;
+      // Pack each box: float pos[3], float angle, float size[3], u8 stateByte
+      for (const box of boxes) {
+        view.setFloat32(off, box.pos[0]);  off += 4;
+        view.setFloat32(off, box.pos[1]);  off += 4;
+        view.setFloat32(off, box.pos[2]);  off += 4;
+        view.setFloat32(off, box.angle);   off += 4;
+        view.setFloat32(off, box.size[0]); off += 4;
+        view.setFloat32(off, box.size[1]); off += 4;
+        view.setFloat32(off, box.size[2]); off += 4;
+        view.setUint8(off, 0); off += 1;  // stateByte: no driveThrough/shootThrough
+      }
+    } else {
+      view.setUint32(off, 0); off += 4;
+    }
+  }
+
   // group instances count = 0
   view.setUint32(off, 0); off += 4;
   // 2) additional group definitions count = 0
@@ -196,9 +282,9 @@ function zlibCompress(data) {
   return out;
 }
 
-// ── Helper: build minimal empty world database ────────────────────────
-function buildEmptyWorldDatabase() {
-  const uncompressed = buildUncompressedWorldData();
+// ── Helper: build world database with obstacles ──────────────────────
+function buildWorldDatabase(worldSize) {
+  const uncompressed = buildUncompressedWorldData(worldSize);
   const compressed = zlibCompress(uncompressed);
 
   // World database format:
@@ -341,17 +427,19 @@ class MockBZFlagServer {
   constructor(options = {}) {
     this.players = new Map();       // playerId -> PlayerState
     this.nextPlayerId = 0;
-    this.worldData = buildEmptyWorldDatabase();
-    this.worldHash = computeWorldHash(this.worldData);
     this.worldSize = options.worldSize || 400.0;
+    this.worldData = buildWorldDatabase(this.worldSize);
+    this.worldHash = computeWorldHash(this.worldData);
     this.gameType = options.gameType ?? GameType.OpenFFA;
     this.maxShots = options.maxShots || 10;
     this.maxPlayers = options.maxPlayers || 20;
-    this.gameOptions = 0;
+    this.gameOptions = 0x0008 | 0x0020;  // JumpingGameStyle | RicochetGameStyle
     this.teamScores = [];
     for (let i = 0; i < CtfTeams; i++) {
       this.teamScores.push({ size: 0, wins: 0, losses: 0 });
     }
+    this.humanPlayerReady = false;       // true once human sends first MsgAlive/MsgPlayerUpdate
+    this._pendingRobotAddPlayers = [];   // queued MsgAddPlayer broadcasts for robots
     this.log = options.debug ? console.log.bind(console, '[MockBZFS]') : () => {};
   }
 
@@ -574,9 +662,15 @@ class MockBZFlagServer {
     // But we DO need to broadcast MsgAddPlayer for the bot to other players
     // (so the main player knows about the robot).
     if (player.type === PlayerType.Computer) {
-      // Broadcast MsgAddPlayer for this bot to all entered players
-      this._broadcastAddPlayer(player);
-      this._sendPlayerInfo(playerId, player);
+      if (this.humanPlayerReady) {
+        // Human is ready — broadcast immediately
+        this._broadcastAddPlayer(player);
+        this._sendPlayerInfo(playerId, player);
+      } else {
+        // Queue until human player proves remotePlayers is allocated
+        this.log(`Queuing MsgAddPlayer for robot ${playerId} until human is ready`);
+        this._pendingRobotAddPlayers.push(player);
+      }
       return;
     }
 
@@ -665,9 +759,27 @@ class MockBZFlagServer {
 
   // ── Gameplay message handlers ─────────────────────────────────────
 
+  _flushPendingRobots() {
+    if (this.humanPlayerReady || this._pendingRobotAddPlayers.length === 0) {
+      if (this._pendingRobotAddPlayers.length === 0) return;
+    }
+    this.humanPlayerReady = true;
+    this.log(`Human player ready — flushing ${this._pendingRobotAddPlayers.length} queued robot MsgAddPlayer(s)`);
+    for (const robot of this._pendingRobotAddPlayers) {
+      this._broadcastAddPlayer(robot);
+      this._sendPlayerInfo(robot.id, robot);
+    }
+    this._pendingRobotAddPlayers = [];
+  }
+
   _handleAlive(playerId) {
     const player = this.players.get(playerId);
     if (!player) return;
+
+    // If a human player sends MsgAlive, remotePlayers must be allocated
+    if (player.type === PlayerType.Tank && !this.humanPlayerReady) {
+      this._flushPendingRobots();
+    }
 
     this.log(`_handleAlive for player ${playerId} "${player.callSign}"`);
 
@@ -695,6 +807,11 @@ class MockBZFlagServer {
   }
 
   _handlePlayerUpdate(playerId, code, payload) {
+    // If a human player sends a position update, remotePlayers must be allocated
+    const updPlayer = this.players.get(playerId);
+    if (updPlayer && updPlayer.type === PlayerType.Tank && !this.humanPlayerReady) {
+      this._flushPendingRobots();
+    }
     // Relay player position updates to all other players
     this._broadcast(code, payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength), playerId);
   }
@@ -852,13 +969,50 @@ class MockBZFlagServer {
   }
 
   /**
+   * Send BZDB variables via MsgSetVar.
+   * Format: u16 numVars, then per var: u8 nameLen, char[nameLen], u8 valueLen, char[valueLen]
+   */
+  _sendSetVars(playerId) {
+    const vars = {
+      '_worldSize': String(this.worldSize),
+    };
+    const entries = Object.entries(vars);
+
+    // Calculate payload size
+    let payloadSize = 2; // u16 numVars
+    for (const [name, value] of entries) {
+      payloadSize += 1 + name.length + 1 + value.length;
+    }
+
+    const payload = new ArrayBuffer(payloadSize);
+    const view = new DataView(payload);
+    const bytes = new Uint8Array(payload);
+    let off = 0;
+
+    view.setUint16(off, entries.length); off += 2;
+    for (const [name, value] of entries) {
+      view.setUint8(off, name.length); off += 1;
+      for (let i = 0; i < name.length; i++) bytes[off + i] = name.charCodeAt(i);
+      off += name.length;
+      view.setUint8(off, value.length); off += 1;
+      for (let i = 0; i < value.length; i++) bytes[off + i] = value.charCodeAt(i);
+      off += value.length;
+    }
+
+    this._sendTo(playerId, Msg.SetVar, payload);
+  }
+
+  /**
    * Send the deferred state dump to a player after world download completes.
-   * This includes team updates, existing player info, and the player's own
-   * MsgAddPlayer (which the client uses to trigger enteringServer()).
+   * This includes BZDB variables, team updates, existing player info, and the
+   * player's own MsgAddPlayer (which the client uses to trigger enteringServer()).
    */
   _sendStateDump(playerId) {
     const player = this.players.get(playerId);
     if (!player) return;
+
+    // 0) Send BZDB variables (must come before world is used)
+    this._sendSetVars(playerId);
 
     // 1) Send MsgTeamUpdate for all teams
     this._sendTeamUpdate(playerId);
