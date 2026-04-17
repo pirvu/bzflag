@@ -203,8 +203,12 @@ BackgroundRenderer::BackgroundRenderer() :
             gstate.reset ();
             gstate.setShading ();
             gstate.setBlending ();
+#ifndef __EMSCRIPTEN__
+            // Under Emscripten, material/alphaFunc trigger lighting-related shader
+            // code in the FFP emulation that produces artifacts (vertical streaks).
             gstate.setMaterial (defaultMaterial);
             gstate.setAlphaFunc ();
+#endif
 
             // find power of two at least as large as height
             int scaledHeight = 1;
@@ -406,6 +410,7 @@ void BackgroundRenderer::setCelestial(const SceneRenderer& renderer,
     moonDirection[1] = moonDir[1];
     moonDirection[2] = moonDir[2];
 
+#ifndef __EMSCRIPTEN__
     if (sunXFormList != INVALID_GL_LIST_ID)
     {
         glDeleteLists(sunXFormList, 1);
@@ -421,6 +426,7 @@ void BackgroundRenderer::setCelestial(const SceneRenderer& renderer,
         glDeleteLists(starXFormList, 1);
         starXFormList = INVALID_GL_LIST_ID;
     }
+#endif
 
     makeCelestialLists(renderer);
 
@@ -460,81 +466,25 @@ void BackgroundRenderer::makeCelestialLists(const SceneRenderer& renderer)
     doStars = areStarsVisible(sunDirection);
     doSunset = getSunsetTop(sunDirection, sunsetTop);
 
+#ifndef __EMSCRIPTEN__
     // make pretransformed display list for sun
     sunXFormList = glGenLists(1);
     glNewList(sunXFormList, GL_COMPILE);
-    {
-        glPushMatrix();
-        glRotatef((GLfloat)(atan2f(sunDirection[1], (sunDirection[0])) * 180.0 / M_PI),
-                  0.0f, 0.0f, 1.0f);
-        glRotatef((GLfloat)(asinf(sunDirection[2]) * 180.0 / M_PI), 0.0f, -1.0f, 0.0f);
-        glCallList(sunList);
-        glPopMatrix();
-    }
+    { renderSunTransformed(); }
     glEndList();
 
     // compute display list for moon
-    float coverage = (moonDirection[0] * sunDirection[0]) +
-                     (moonDirection[1] * sunDirection[1]) +
-                     (moonDirection[2] * sunDirection[2]);
-    // hack coverage to lean towards full
-    coverage = (coverage < 0.0f) ? -sqrtf(-coverage) : coverage * coverage;
-    float worldSize = BZDBCache::worldSize;
-    const float moonRadius = 2.0f * worldSize *
-                             atanf((float)((60.0 * M_PI / 180.0) / 60.0));
-    // limbAngle is dependent on moon position but sun is so much farther
-    // away that the moon's position is negligible.  rotate sun and moon
-    // so that moon is on the horizon in the +x direction, then compute
-    // the angle to the sun position in the yz plane.
-    float sun2[3];
-    const float moonAzimuth = atan2f(moonDirection[1], moonDirection[0]);
-    const float moonAltitude = asinf(moonDirection[2]);
-    sun2[0] = sunDirection[0] * cosf(moonAzimuth) + sunDirection[1] * sinf(moonAzimuth);
-    sun2[1] = sunDirection[1] * cosf(moonAzimuth) - sunDirection[0] * sinf(moonAzimuth);
-    sun2[2] = sunDirection[2] * cosf(moonAltitude) - sun2[0] * sinf(moonAltitude);
-    const float limbAngle = atan2f(sun2[2], sun2[1]);
-
-    const int moonSegements = BZDB.evalInt("moonSegments");
     moonList = glGenLists(1);
     glNewList(moonList, GL_COMPILE);
-    {
-        glPushMatrix();
-        glRotatef((GLfloat)(atan2f(moonDirection[1], moonDirection[0]) * 180.0 / M_PI),
-                  0.0f, 0.0f, 1.0f);
-        glRotatef((GLfloat)(asinf(moonDirection[2]) * 180.0 / M_PI), 0.0f, -1.0f, 0.0f);
-        glRotatef((float)(limbAngle * 180.0 / M_PI), 1.0f, 0.0f, 0.0f);
-        glBegin(GL_TRIANGLE_STRIP);
-        // glTexCoord2f(0,-1);
-        glVertex3f(2.0f * worldSize, 0.0f, -moonRadius);
-        for (int i = 0; i < moonSegements-1; i++)
-        {
-            const float angle = (float)(0.5 * M_PI * double(i-(moonSegements/2)-1) / (moonSegements/2.0));
-            float sinAngle = sinf(angle);
-            float cosAngle = cosf(angle);
-            // glTexCoord2f(coverage*cosAngle,sinAngle);
-            glVertex3f(2.0f * worldSize, coverage * moonRadius * cosAngle,moonRadius * sinAngle);
-
-            // glTexCoord2f(cosAngle,sinAngle);
-            glVertex3f(2.0f * worldSize, moonRadius * cosAngle,moonRadius * sinAngle);
-        }
-        // glTexCoord2f(0,1);
-        glVertex3f(2.0f * worldSize, 0.0f, moonRadius);
-        glEnd();
-        glPopMatrix();
-    }
+    { renderMoonBody(); }
     glEndList();
 
     // make pretransformed display list for stars
     starXFormList = glGenLists(1);
     glNewList(starXFormList, GL_COMPILE);
-    {
-        glPushMatrix();
-        glMultMatrixf(renderer.getCelestialTransform());
-        glScalef(worldSize, worldSize, worldSize);
-        glCallList(starList);
-        glPopMatrix();
-    }
+    { renderStarsTransformed(renderer); }
     glEndList();
+#endif
 
     return;
 }
@@ -701,8 +651,12 @@ void BackgroundRenderer::renderGroundEffects(SceneRenderer& renderer,
                 glMatrixMode(GL_TEXTURE);
                 glPushMatrix();
                 glTranslatef(cloudDriftU, cloudDriftV, 0.0f);
+#ifdef __EMSCRIPTEN__
+                renderCloudsBody();
+#else
                 glCallList(cloudsList);
-                glLoadIdentity();   // maybe works around bug in some systems
+#endif
+                glLoadIdentity();
                 glPopMatrix();
                 glMatrixMode(GL_MODELVIEW);
             }
@@ -1062,7 +1016,11 @@ void BackgroundRenderer::drawSky(SceneRenderer& renderer, bool mirror)
     glLoadIdentity();
     renderer.getViewFrustum().executeOrientation();
 
+#ifdef __EMSCRIPTEN__
+    const bool useClipPlane = false; // clip planes not supported under WebGL emulation
+#else
     const bool useClipPlane = (mirror && (doSkybox || BZDBCache::drawCelestial));
+#endif
 
     if (useClipPlane)
         glEnable(GL_CLIP_PLANE0);
@@ -1076,22 +1034,32 @@ void BackgroundRenderer::drawSky(SceneRenderer& renderer, bool mirror)
         {
             sunGState.setState();
             glColor3fv(renderer.getSunScaledColor());
+#ifdef __EMSCRIPTEN__
+            renderSunTransformed();
+#else
             glCallList(sunXFormList);
+#endif
         }
 
         if (doStars)
         {
             starGState[starGStateIndex].setState();
+#ifdef __EMSCRIPTEN__
+            renderStarsTransformed(renderer);
+#else
             glCallList(starXFormList);
+#endif
         }
 
         if (moonDirection[2] > -0.009f)
         {
             moonGState[doStars ? 1 : 0].setState();
             glColor3f(1.0f, 1.0f, 1.0f);
-            //   if (useMoonTexture)
-            //     glEnable(GL_TEXTURE_2D);
+#ifdef __EMSCRIPTEN__
+            renderMoonBody();
+#else
             glCallList(moonList);
+#endif
         }
 
     }
@@ -1130,7 +1098,16 @@ void BackgroundRenderer::drawGround()
         if (RENDERER.useQuality() >= 2)
             drawGroundCentered();
         else
+        {
+#ifdef __EMSCRIPTEN__
+            if (styleIndex == 0 || styleIndex == 1)
+                renderSimpleGroundQuad();
+            else
+                renderSimpleGroundTextured();
+#else
             glCallList(simpleGroundList[styleIndex]);
+#endif
+        }
     }
 }
 
@@ -1641,18 +1618,23 @@ void BackgroundRenderer::drawMountains(void)
     for (int i = 0; i < numMountainTextures; i++)
     {
         mountainsGState[i].setState();
+#ifdef __EMSCRIPTEN__
+        renderMountainStrip(i);
+#else
         glCallList(mountainsList[i]);
+#endif
     }
 }
 
 
 void BackgroundRenderer::doFreeDisplayLists()
 {
-    int i;
-
     // don't forget the tag-along
     weather.freeContext();
     EFFECTS.freeContext();
+
+#ifndef __EMSCRIPTEN__
+    int i;
 
     // simpleGroundList[1] && simpleGroundList[3] are copies of [0] & [2]
     simpleGroundList[1] = INVALID_GL_LIST_ID;
@@ -1687,8 +1669,308 @@ void BackgroundRenderer::doFreeDisplayLists()
             }
         }
     }
+#endif
 
     return;
+}
+
+
+void BackgroundRenderer::renderSunDisk()
+{
+    const float worldSize = BZDBCache::worldSize;
+    const float sunRadius = (float)(2.0 * worldSize * atanf((float)(60.0*M_PI/180.0)) / 60.0);
+    glBegin(GL_TRIANGLE_FAN);
+    {
+        glVertex3f(2.0f * worldSize, 0.0f, 0.0f);
+        for (int i = 0; i < 20; i++)
+        {
+            const float angle = (float)(2.0 * M_PI * double(i) / 19.0);
+            glVertex3f(2.0f * worldSize, sunRadius * sinf(angle),
+                       sunRadius * cosf(angle));
+        }
+    }
+    glEnd();
+}
+
+void BackgroundRenderer::renderStarPoints()
+{
+    glBegin(GL_POINTS);
+    for (int i = 0; i < (int)NumStars; i++)
+    {
+        glColor3fv(stars[i]);
+        glVertex3fv(stars[i] + 3);
+    }
+    glEnd();
+}
+
+void BackgroundRenderer::renderSimpleGroundQuad()
+{
+    const float groundSize = 10.0f * BZDBCache::worldSize;
+    GLfloat groundPlane[4][2] =
+    {
+        {  groundSize,  groundSize },
+        { -groundSize,  groundSize },
+        { -groundSize, -groundSize },
+        {  groundSize, -groundSize }
+    };
+    glBegin(GL_TRIANGLE_STRIP);
+    glVertex2fv(groundPlane[0]);
+    glVertex2fv(groundPlane[1]);
+    glVertex2fv(groundPlane[3]);
+    glVertex2fv(groundPlane[2]);
+    glEnd();
+}
+
+void BackgroundRenderer::renderSimpleGroundTextured()
+{
+    SceneRenderer& renderer = RENDERER;
+    const float groundSize = 10.0f * BZDBCache::worldSize;
+    GLfloat groundPlane[4][3];
+    for (int k = 0; k < 4; k++)
+    {
+        groundPlane[k][0] = groundSize * squareShape[k][0];
+        groundPlane[k][1] = groundSize * squareShape[k][1];
+        groundPlane[k][2] = 0.0f;
+    }
+
+#define GROUND_DIVS (4)
+    GLfloat xmax = groundPlane[0][0];
+    GLfloat ymax = groundPlane[0][1];
+    GLfloat xmin = groundPlane[2][0];
+    GLfloat ymin = groundPlane[2][1];
+    GLfloat xdist = (xmax - xmin) / (float)GROUND_DIVS;
+    GLfloat ydist = (ymax - ymin) / (float)GROUND_DIVS;
+
+    float vec[2];
+    renderer.getGroundUV(groundPlane[0], vec);
+    GLfloat xtexmax = vec[0];
+    GLfloat ytexmax = vec[1];
+    renderer.getGroundUV(groundPlane[2], vec);
+    GLfloat xtexmin = vec[0];
+    GLfloat ytexmin = vec[1];
+    GLfloat xtexdist = (xtexmax - xtexmin) / (float)GROUND_DIVS;
+    GLfloat ytexdist = (ytexmax - ytexmin) / (float)GROUND_DIVS;
+
+    for (int i = 0; i < GROUND_DIVS; i++)
+    {
+        GLfloat yoff = ymin + ydist * (GLfloat)i;
+        GLfloat ytexoff = ytexmin + ytexdist * (GLfloat)i;
+
+        glBegin(GL_TRIANGLE_STRIP);
+
+        glTexCoord2f(xtexmin, ytexoff + ytexdist);
+        glVertex2f(xmin, yoff + ydist);
+        glTexCoord2f(xtexmin, ytexoff);
+        glVertex2f(xmin, yoff);
+
+        for (int j = 0; j < GROUND_DIVS; j++)
+        {
+            GLfloat xoff = xmin + xdist * (GLfloat)(j + 1);
+            GLfloat xtexoff = xtexmin + xtexdist * (GLfloat)(j + 1);
+
+            glTexCoord2f(xtexoff, ytexoff + ytexdist);
+            glVertex2f(xoff, yoff + ydist);
+            glTexCoord2f(xtexoff, ytexoff);
+            glVertex2f(xoff, yoff);
+        }
+        glEnd();
+    }
+#undef GROUND_DIVS
+}
+
+void BackgroundRenderer::renderCloudsBody()
+{
+    const float groundSize = 10.0f * BZDBCache::worldSize;
+    const GLfloat uvScale = 0.25f;
+    GLfloat cloudsOuter[4][3], cloudsInner[4][3];
+    for (int i = 0; i < 4; i++)
+    {
+        cloudsOuter[i][0] = groundSize * squareShape[i][0];
+        cloudsOuter[i][1] = groundSize * squareShape[i][1];
+        cloudsOuter[i][2] = 120.0f * BZDBCache::tankHeight;
+        cloudsInner[i][0] = uvScale * cloudsOuter[i][0];
+        cloudsInner[i][1] = uvScale * cloudsOuter[i][1];
+        cloudsInner[i][2] = cloudsOuter[i][2];
+    }
+
+    glNormal3f(0.0f, 0.0f, 1.0f);
+    glBegin(GL_TRIANGLE_STRIP);
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    glTexCoord2f(uvScale * cloudRepeats * squareShape[3][0],
+                 uvScale * cloudRepeats * squareShape[3][1]);
+    glVertex3fv(cloudsInner[3]);
+    glTexCoord2f(uvScale * cloudRepeats * squareShape[2][0],
+                 uvScale * cloudRepeats * squareShape[2][1]);
+    glVertex3fv(cloudsInner[2]);
+    glTexCoord2f(uvScale * cloudRepeats * squareShape[0][0],
+                 uvScale * cloudRepeats * squareShape[0][1]);
+    glVertex3fv(cloudsInner[0]);
+    glTexCoord2f(uvScale * cloudRepeats * squareShape[1][0],
+                 uvScale * cloudRepeats * squareShape[1][1]);
+    glVertex3fv(cloudsInner[1]);
+    glEnd();
+
+    glBegin(GL_TRIANGLE_STRIP);
+    glColor4f(1.0f, 1.0f, 1.0f, 0.0f);
+    glTexCoord2f(cloudRepeats * squareShape[1][0],
+                 cloudRepeats * squareShape[1][1]);
+    glVertex3fv(cloudsOuter[1]);
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    glTexCoord2f(uvScale * cloudRepeats * squareShape[1][0],
+                 uvScale * cloudRepeats * squareShape[1][1]);
+    glVertex3fv(cloudsInner[1]);
+
+    glColor4f(1.0f, 1.0f, 1.0f, 0.0f);
+    glTexCoord2f(cloudRepeats * squareShape[2][0],
+                 cloudRepeats * squareShape[2][1]);
+    glVertex3fv(cloudsOuter[2]);
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    glTexCoord2f(uvScale * cloudRepeats * squareShape[2][0],
+                 uvScale * cloudRepeats * squareShape[2][1]);
+    glVertex3fv(cloudsInner[2]);
+
+    glColor4f(1.0f, 1.0f, 1.0f, 0.0f);
+    glTexCoord2f(cloudRepeats * squareShape[3][0],
+                 cloudRepeats * squareShape[3][1]);
+    glVertex3fv(cloudsOuter[3]);
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    glTexCoord2f(uvScale * cloudRepeats * squareShape[3][0],
+                 uvScale * cloudRepeats * squareShape[3][1]);
+    glVertex3fv(cloudsInner[3]);
+
+    glColor4f(1.0f, 1.0f, 1.0f, 0.0f);
+    glTexCoord2f(cloudRepeats * squareShape[0][0],
+                 cloudRepeats * squareShape[0][1]);
+    glVertex3fv(cloudsOuter[0]);
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    glTexCoord2f(uvScale * cloudRepeats * squareShape[0][0],
+                 uvScale * cloudRepeats * squareShape[0][1]);
+    glVertex3fv(cloudsInner[0]);
+
+    glColor4f(1.0f, 1.0f, 1.0f, 0.0f);
+    glTexCoord2f(cloudRepeats * squareShape[1][0],
+                 cloudRepeats * squareShape[1][1]);
+    glVertex3fv(cloudsOuter[1]);
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    glTexCoord2f(uvScale * cloudRepeats * squareShape[1][0],
+                 uvScale * cloudRepeats * squareShape[1][1]);
+    glVertex3fv(cloudsInner[1]);
+    glEnd();
+}
+
+void BackgroundRenderer::renderMountainStrip(int texIndex)
+{
+    const float worldSize = BZDBCache::worldSize;
+    const int numFacesPerTexture = (NumMountainFaces +
+                                    numMountainTextures - 1) / numMountainTextures;
+    const float angleScale = (float)(M_PI / (numMountainTextures * numFacesPerTexture));
+    float hightScale = mountainsMinWidth / 256.0f;
+    int n = numFacesPerTexture / 2 + texIndex * numFacesPerTexture;
+
+    glBegin(GL_TRIANGLE_STRIP);
+    for (int i = 0; i <= numFacesPerTexture; i++)
+    {
+        const float angle = angleScale * (float)(i + n);
+        float frac = (float)i / (float)numFacesPerTexture;
+        if (numMountainTextures != 1)
+            frac = (frac * (float)(mountainsMinWidth - 2) + 1.0f) /
+                   (float)mountainsMinWidth;
+#ifndef __EMSCRIPTEN__
+        glNormal3f((float)(-M_SQRT1_2 * cosf(angle)),
+                   (float)(-M_SQRT1_2 * sinf(angle)),
+                   (float)M_SQRT1_2);
+#endif
+        glTexCoord2f(frac, 0.02f);
+        glVertex3f(2.25f * worldSize * cosf(angle),
+                   2.25f * worldSize * sinf(angle),
+                   0.0f);
+        glTexCoord2f(frac, 0.99f);
+        glVertex3f(2.25f * worldSize * cosf(angle),
+                   2.25f * worldSize * sinf(angle),
+                   0.45f * worldSize * hightScale);
+    }
+    glEnd();
+    glBegin(GL_TRIANGLE_STRIP);
+    for (int i = 0; i <= numFacesPerTexture; i++)
+    {
+        const float angle = (float)(M_PI + angleScale * (double)(i + n));
+        float frac = (float)i / (float)numFacesPerTexture;
+        if (numMountainTextures != 1)
+            frac = (frac * (float)(mountainsMinWidth - 2) + 1.0f) /
+                   (float)mountainsMinWidth;
+#ifndef __EMSCRIPTEN__
+        glNormal3f((float)(-M_SQRT1_2 * cosf(angle)),
+                   (float)(-M_SQRT1_2 * sinf(angle)),
+                   (float)M_SQRT1_2);
+#endif
+        glTexCoord2f(frac, 0.02f);
+        glVertex3f(2.25f * worldSize * cosf(angle),
+                   2.25f * worldSize * sinf(angle),
+                   0.0f);
+        glTexCoord2f(frac, 0.99f);
+        glVertex3f(2.25f * worldSize * cosf(angle),
+                   2.25f * worldSize * sinf(angle),
+                   0.45f * worldSize * hightScale);
+    }
+    glEnd();
+}
+
+void BackgroundRenderer::renderSunTransformed()
+{
+    glPushMatrix();
+    glRotatef((GLfloat)(atan2f(sunDirection[1], (sunDirection[0])) * 180.0 / M_PI),
+              0.0f, 0.0f, 1.0f);
+    glRotatef((GLfloat)(asinf(sunDirection[2]) * 180.0 / M_PI), 0.0f, -1.0f, 0.0f);
+    renderSunDisk();
+    glPopMatrix();
+}
+
+void BackgroundRenderer::renderMoonBody()
+{
+    float worldSize = BZDBCache::worldSize;
+    float coverage = (moonDirection[0] * sunDirection[0]) +
+                     (moonDirection[1] * sunDirection[1]) +
+                     (moonDirection[2] * sunDirection[2]);
+    coverage = (coverage < 0.0f) ? -sqrtf(-coverage) : coverage * coverage;
+    const float moonRadius = 2.0f * worldSize *
+                             atanf((float)((60.0 * M_PI / 180.0) / 60.0));
+    float sun2[3];
+    const float moonAzimuth = atan2f(moonDirection[1], moonDirection[0]);
+    const float moonAltitude = asinf(moonDirection[2]);
+    sun2[0] = sunDirection[0] * cosf(moonAzimuth) + sunDirection[1] * sinf(moonAzimuth);
+    sun2[1] = sunDirection[1] * cosf(moonAzimuth) - sunDirection[0] * sinf(moonAzimuth);
+    sun2[2] = sunDirection[2] * cosf(moonAltitude) - sun2[0] * sinf(moonAltitude);
+    const float limbAngle = atan2f(sun2[2], sun2[1]);
+
+    const int moonSegements = BZDB.evalInt("moonSegments");
+    glPushMatrix();
+    glRotatef((GLfloat)(atan2f(moonDirection[1], moonDirection[0]) * 180.0 / M_PI),
+              0.0f, 0.0f, 1.0f);
+    glRotatef((GLfloat)(asinf(moonDirection[2]) * 180.0 / M_PI), 0.0f, -1.0f, 0.0f);
+    glRotatef((float)(limbAngle * 180.0 / M_PI), 1.0f, 0.0f, 0.0f);
+    glBegin(GL_TRIANGLE_STRIP);
+    glVertex3f(2.0f * worldSize, 0.0f, -moonRadius);
+    for (int i = 0; i < moonSegements-1; i++)
+    {
+        const float angle = (float)(0.5 * M_PI * double(i-(moonSegements/2)-1) / (moonSegements/2.0));
+        float sinAngle = sinf(angle);
+        float cosAngle = cosf(angle);
+        glVertex3f(2.0f * worldSize, coverage * moonRadius * cosAngle, moonRadius * sinAngle);
+        glVertex3f(2.0f * worldSize, moonRadius * cosAngle, moonRadius * sinAngle);
+    }
+    glVertex3f(2.0f * worldSize, 0.0f, moonRadius);
+    glEnd();
+    glPopMatrix();
+}
+
+void BackgroundRenderer::renderStarsTransformed(const SceneRenderer& renderer)
+{
+    float worldSize = BZDBCache::worldSize;
+    glPushMatrix();
+    glMultMatrixf(renderer.getCelestialTransform());
+    glScalef(worldSize, worldSize, worldSize);
+    renderStarPoints();
+    glPopMatrix();
 }
 
 
@@ -1707,286 +1989,68 @@ void BackgroundRenderer::doInitDisplayLists()
 
     // sun first.  sun is a disk that should be about a half a degree wide
     // with a normal (60 degree) perspective.
-    const float worldSize = BZDBCache::worldSize;
-    const float sunRadius = (float)(2.0 * worldSize * atanf((float)(60.0*M_PI/180.0)) / 60.0);
+#ifndef __EMSCRIPTEN__
     sunList = glGenLists(1);
     glNewList(sunList, GL_COMPILE);
-    {
-        glBegin(GL_TRIANGLE_FAN);
-        {
-            glVertex3f(2.0f * worldSize, 0.0f, 0.0f);
-            for (i = 0; i < 20; i++)
-            {
-                const float angle = (float)(2.0 * M_PI * double(i) / 19.0);
-                glVertex3f(2.0f * worldSize, sunRadius * sinf(angle),
-                           sunRadius * cosf(angle));
-            }
-        }
-        glEnd();
-    }
+    { renderSunDisk(); }
     glEndList();
 
     // make stars list
     starList = glGenLists(1);
     glNewList(starList, GL_COMPILE);
-    {
-        glBegin(GL_POINTS);
-        for (i = 0; i < (int)NumStars; i++)
-        {
-            glColor3fv(stars[i]);
-            glVertex3fv(stars[i] + 3);
-        }
-        glEnd();
-    }
+    { renderStarPoints(); }
     glEndList();
+#endif
 
     //
     // ground
     //
 
-    const GLfloat groundSize = 10.0f * worldSize;
-    GLfloat groundPlane[4][3];
-    for (i = 0; i < 4; i++)
-    {
-        groundPlane[i][0] = groundSize * squareShape[i][0];
-        groundPlane[i][1] = groundSize * squareShape[i][1];
-        groundPlane[i][2] = 0.0f;
-    }
-
-    {
-        GLfloat xmin, xmax;
-        GLfloat ymin, ymax;
-        GLfloat xdist, ydist;
-        GLfloat xtexmin, xtexmax;
-        GLfloat ytexmin, ytexmax;
-        GLfloat xtexdist, ytexdist;
-        float vec[2];
-
-#define GROUND_DIVS (4) //FIXME -- seems to be enough
-
-        xmax = groundPlane[0][0];
-        ymax = groundPlane[0][1];
-        xmin = groundPlane[2][0];
-        ymin = groundPlane[2][1];
-        xdist = (xmax - xmin) / (float)GROUND_DIVS;
-        ydist = (ymax - ymin) / (float)GROUND_DIVS;
-
-        renderer.getGroundUV (groundPlane[0], vec);
-        xtexmax = vec[0];
-        ytexmax = vec[1];
-        renderer.getGroundUV (groundPlane[2], vec);
-        xtexmin = vec[0];
-        ytexmin = vec[1];
-        xtexdist = (xtexmax - xtexmin) / (float)GROUND_DIVS;
-        ytexdist = (ytexmax - ytexmin) / (float)GROUND_DIVS;
-
-        simpleGroundList[2] = glGenLists(1);
-        glNewList(simpleGroundList[2], GL_COMPILE);
-        {
-            for (i = 0; i < GROUND_DIVS; i++)
-            {
-                GLfloat yoff, ytexoff;
-
-                yoff = ymin + ydist * (GLfloat)i;
-                ytexoff = ytexmin + ytexdist * (GLfloat)i;
-
-                glBegin(GL_TRIANGLE_STRIP);
-
-                glTexCoord2f(xtexmin, ytexoff + ytexdist);
-                glVertex2f(xmin, yoff + ydist);
-                glTexCoord2f(xtexmin, ytexoff);
-                glVertex2f(xmin, yoff);
-
-                for (j = 0; j < GROUND_DIVS; j++)
-                {
-                    GLfloat xoff, xtexoff;
-
-                    xoff = xmin + xdist * (GLfloat)(j + 1);
-                    xtexoff = xtexmin + xtexdist * (GLfloat)(j + 1);
-
-                    glTexCoord2f(xtexoff, ytexoff + ytexdist);
-                    glVertex2f(xoff, yoff + ydist);
-                    glTexCoord2f(xtexoff, ytexoff);
-                    glVertex2f(xoff, yoff);
-                }
-                glEnd();
-            }
-        }
-        glEndList();
-    }
+#ifndef __EMSCRIPTEN__
+    simpleGroundList[2] = glGenLists(1);
+    glNewList(simpleGroundList[2], GL_COMPILE);
+    { renderSimpleGroundTextured(); }
+    glEndList();
 
     simpleGroundList[0] = glGenLists(1);
     glNewList(simpleGroundList[0], GL_COMPILE);
-    {
-        glBegin(GL_TRIANGLE_STRIP);
-        glVertex2fv(groundPlane[0]);
-        glVertex2fv(groundPlane[1]);
-        glVertex2fv(groundPlane[3]);
-        glVertex2fv(groundPlane[2]);
-        glEnd();
-    }
+    { renderSimpleGroundQuad(); }
     glEndList();
 
     simpleGroundList[1] = simpleGroundList[0];
     simpleGroundList[3] = simpleGroundList[2];
+#endif
 
     //
     // clouds
     //
 
+#ifndef __EMSCRIPTEN__
     if (cloudsAvailable)
     {
-        // make vertices for cloud polygons
-        GLfloat cloudsOuter[4][3], cloudsInner[4][3];
-        const GLfloat uvScale = 0.25f;
-        for (i = 0; i < 4; i++)
-        {
-            cloudsOuter[i][0] = groundPlane[i][0];
-            cloudsOuter[i][1] = groundPlane[i][1];
-            cloudsOuter[i][2] = groundPlane[i][2] + 120.0f * BZDBCache::tankHeight;
-            cloudsInner[i][0] = uvScale * cloudsOuter[i][0];
-            cloudsInner[i][1] = uvScale * cloudsOuter[i][1];
-            cloudsInner[i][2] = cloudsOuter[i][2];
-        }
-
         cloudsList = glGenLists(1);
         glNewList(cloudsList, GL_COMPILE);
-        {
-            glNormal3f(0.0f, 0.0f, 1.0f);
-            // inner clouds -- full opacity
-            glBegin(GL_TRIANGLE_STRIP);
-            glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-            glTexCoord2f(uvScale * cloudRepeats * squareShape[3][0],
-                         uvScale * cloudRepeats * squareShape[3][1]);
-            glVertex3fv(cloudsInner[3]);
-            glTexCoord2f(uvScale * cloudRepeats * squareShape[2][0],
-                         uvScale * cloudRepeats * squareShape[2][1]);
-            glVertex3fv(cloudsInner[2]);
-            glTexCoord2f(uvScale * cloudRepeats * squareShape[0][0],
-                         uvScale * cloudRepeats * squareShape[0][1]);
-            glVertex3fv(cloudsInner[0]);
-            glTexCoord2f(uvScale * cloudRepeats * squareShape[1][0],
-                         uvScale * cloudRepeats * squareShape[1][1]);
-            glVertex3fv(cloudsInner[1]);
-            glEnd();
-
-            // outer clouds -- fade to zero opacity at outer edge
-            glBegin(GL_TRIANGLE_STRIP);
-            glColor4f(1.0f, 1.0f, 1.0f, 0.0f);
-            glTexCoord2f(cloudRepeats * squareShape[1][0],
-                         cloudRepeats * squareShape[1][1]);
-            glVertex3fv(cloudsOuter[1]);
-            glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-            glTexCoord2f(uvScale * cloudRepeats * squareShape[1][0],
-                         uvScale * cloudRepeats * squareShape[1][1]);
-            glVertex3fv(cloudsInner[1]);
-
-            glColor4f(1.0f, 1.0f, 1.0f, 0.0f);
-            glTexCoord2f(cloudRepeats * squareShape[2][0],
-                         cloudRepeats * squareShape[2][1]);
-            glVertex3fv(cloudsOuter[2]);
-            glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-            glTexCoord2f(uvScale * cloudRepeats * squareShape[2][0],
-                         uvScale * cloudRepeats * squareShape[2][1]);
-            glVertex3fv(cloudsInner[2]);
-
-            glColor4f(1.0f, 1.0f, 1.0f, 0.0f);
-            glTexCoord2f(cloudRepeats * squareShape[3][0],
-                         cloudRepeats * squareShape[3][1]);
-            glVertex3fv(cloudsOuter[3]);
-            glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-            glTexCoord2f(uvScale * cloudRepeats * squareShape[3][0],
-                         uvScale * cloudRepeats * squareShape[3][1]);
-            glVertex3fv(cloudsInner[3]);
-
-            glColor4f(1.0f, 1.0f, 1.0f, 0.0f);
-            glTexCoord2f(cloudRepeats * squareShape[0][0],
-                         cloudRepeats * squareShape[0][1]);
-            glVertex3fv(cloudsOuter[0]);
-            glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-            glTexCoord2f(uvScale * cloudRepeats * squareShape[0][0],
-                         uvScale * cloudRepeats * squareShape[0][1]);
-            glVertex3fv(cloudsInner[0]);
-
-            glColor4f(1.0f, 1.0f, 1.0f, 0.0f);
-            glTexCoord2f(cloudRepeats * squareShape[1][0],
-                         cloudRepeats * squareShape[1][1]);
-            glVertex3fv(cloudsOuter[1]);
-            glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-            glTexCoord2f(uvScale * cloudRepeats * squareShape[1][0],
-                         uvScale * cloudRepeats * squareShape[1][1]);
-            glVertex3fv(cloudsInner[1]);
-            glEnd();
-        }
+        { renderCloudsBody(); }
         glEndList();
     }
+#endif
 
     //
     // mountains
     //
 
+#ifndef __EMSCRIPTEN__
     if (numMountainTextures > 0)
     {
-        // prepare display lists.  need at least NumMountainFaces, but
-        // we also need a multiple of the number of subtextures.  put
-        // all the faces using a given texture into the same list.
-        const int numFacesPerTexture = (NumMountainFaces +
-                                        numMountainTextures - 1) / numMountainTextures;
-        const float angleScale = (float)(M_PI / (numMountainTextures * numFacesPerTexture));
-        int n = numFacesPerTexture / 2;
-        float hightScale = mountainsMinWidth / 256.0f;
-
-        for (j = 0; j < numMountainTextures; n += numFacesPerTexture, j++)
+        for (j = 0; j < numMountainTextures; j++)
         {
             mountainsList[j] = glGenLists(1);
             glNewList(mountainsList[j], GL_COMPILE);
-            {
-                glBegin(GL_TRIANGLE_STRIP);
-                for (i = 0; i <= numFacesPerTexture; i++)
-                {
-                    const float angle = angleScale * (float)(i + n);
-                    float frac = (float)i / (float)numFacesPerTexture;
-                    if (numMountainTextures != 1)
-                        frac = (frac * (float)(mountainsMinWidth - 2) + 1.0f) /
-                               (float)mountainsMinWidth;
-                    glNormal3f((float)(-M_SQRT1_2 * cosf(angle)),
-                               (float)(-M_SQRT1_2 * sinf(angle)),
-                               (float)M_SQRT1_2);
-                    glTexCoord2f(frac, 0.02f);
-                    glVertex3f(2.25f * worldSize * cosf(angle),
-                               2.25f * worldSize * sinf(angle),
-                               0.0f);
-                    glTexCoord2f(frac, 0.99f);
-                    glVertex3f(2.25f * worldSize * cosf(angle),
-                               2.25f * worldSize * sinf(angle),
-                               0.45f * worldSize * hightScale);
-                }
-                glEnd();
-                glBegin(GL_TRIANGLE_STRIP);
-                for (i = 0; i <= numFacesPerTexture; i++)
-                {
-                    const float angle = (float)(M_PI + angleScale * (double)(i + n));
-                    float frac = (float)i / (float)numFacesPerTexture;
-                    if (numMountainTextures != 1)
-                        frac = (frac * (float)(mountainsMinWidth - 2) + 1.0f) /
-                               (float)mountainsMinWidth;
-                    glNormal3f((float)(-M_SQRT1_2 * cosf(angle)),
-                               (float)(-M_SQRT1_2 * sinf(angle)),
-                               (float)M_SQRT1_2);
-                    glTexCoord2f(frac, 0.02f);
-                    glVertex3f(2.25f * worldSize * cosf(angle),
-                               2.25f * worldSize * sinf(angle),
-                               0.0f);
-                    glTexCoord2f(frac, 0.99f);
-                    glVertex3f(2.25f * worldSize * cosf(angle),
-                               2.25f * worldSize * sinf(angle),
-                               0.45f * worldSize*hightScale);
-                }
-                glEnd();
-            }
+            { renderMountainStrip(j); }
             glEndList();
         }
     }
+#endif
 
     //
     // update objects in sky.  the appearance of these objects will

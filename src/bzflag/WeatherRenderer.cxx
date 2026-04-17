@@ -901,10 +901,11 @@ void WeatherRenderer::drawDrop(rain& drop, const SceneRenderer& sr)
         if (spinRain)
             glRotatef(lastRainTime * 10.0f * rainSpeed, 0, 0, 1);
 
-        if (1)
-            glCallList(dropList);
-        else
-            buildDropList(true);
+#ifdef __EMSCRIPTEN__
+        buildDropList(true);
+#else
+        glCallList(dropList);
+#endif
         glPopMatrix();
     }
 }
@@ -921,10 +922,11 @@ void WeatherRenderer::drawPuddle(puddle& splash)
     glColor4f(puddleColor[0], puddleColor[1], puddleColor[2], 1.0f - lifeTime);
 
     glScalef(scale, scale, scale);
-    if (1)
-        glCallList(puddleList);
-    else
-        buildPuddleList(true);
+#ifdef __EMSCRIPTEN__
+    buildPuddleList(true);
+#else
+    glCallList(puddleList);
+#endif
 
     glPopMatrix();
 }

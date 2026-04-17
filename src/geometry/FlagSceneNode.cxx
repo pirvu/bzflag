@@ -172,6 +172,9 @@ void WaveGeometry::waveFlag(float dt)
     }
 
     // make a GL display list if desired
+#ifdef __EMSCRIPTEN__
+    glList = INVALID_GL_LIST_ID;
+#else
     if (flagLists)
     {
         glList = glGenLists(1);
@@ -181,6 +184,7 @@ void WaveGeometry::waveFlag(float dt)
     }
     else
         glList = INVALID_GL_LIST_ID;
+#endif
 
     triCount = flagChunks * 2;
 

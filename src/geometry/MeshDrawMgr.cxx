@@ -182,6 +182,7 @@ void MeshDrawMgr::makeLists()
     auto lod = 0;
     auto curDrawLod = drawInfo->getDrawLods();
 
+#ifndef __EMSCRIPTEN__
     for (auto &item : lodLists)
     {
         const DrawLod& drawLod = *(curDrawLod++);
@@ -211,6 +212,7 @@ void MeshDrawMgr::makeLists()
         }
         lod++;
     }
+#endif
 
     return;
 }
