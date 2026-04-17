@@ -102,41 +102,41 @@ const ObstacleTypeCount = 10; // wallType through tetraType
 function generateBoundaryWalls(worldSize) {
   const half = worldSize / 2;
   const height = 100;
+  // Wall normal = (cos(angle), sin(angle), 0) — must point INWARD toward map center
   return [
-    { pos: [0, half, 0],   angle: Math.PI / 2,  breadth: half, height },   // North
-    { pos: [0, -half, 0],  angle: -Math.PI / 2, breadth: half, height },   // South
-    { pos: [half, 0, 0],   angle: 0,            breadth: half, height },   // East
-    { pos: [-half, 0, 0],  angle: Math.PI,      breadth: half, height },   // West
+    { pos: [0, half, 0],   angle: -Math.PI / 2, breadth: half, height },  // North wall, normal faces south
+    { pos: [0, -half, 0],  angle: Math.PI / 2,  breadth: half, height },  // South wall, normal faces north
+    { pos: [half, 0, 0],   angle: Math.PI,      breadth: half, height },  // East wall, normal faces west
+    { pos: [-half, 0, 0],  angle: 0,            breadth: half, height },  // West wall, normal faces east
   ];
 }
 
 // ── Helper: generate map boxes ───────────────────────────────────────
 function generateMapBoxes(worldSize) {
   const boxes = [];
-  const half = worldSize / 2 * 0.8;
 
   // Central structures — a few tall buildings in the middle
-  boxes.push({ pos: [0, 0, 0], angle: 0, size: [10, 10, 30] });
-  boxes.push({ pos: [40, 40, 0], angle: 0.785, size: [8, 8, 20] });
-  boxes.push({ pos: [-40, -40, 0], angle: 0.785, size: [8, 8, 20] });
+  boxes.push({ pos: [0, 0, 0], angle: 0, size: [15, 15, 40] });
+  boxes.push({ pos: [80, 80, 0], angle: 0.785, size: [12, 12, 25] });
+  boxes.push({ pos: [-80, -80, 0], angle: 0.785, size: [12, 12, 25] });
 
   // Scattered cover around the map
-  boxes.push({ pos: [80, 0, 0], angle: 0, size: [15, 5, 10] });
-  boxes.push({ pos: [-80, 0, 0], angle: 0, size: [15, 5, 10] });
-  boxes.push({ pos: [0, 80, 0], angle: 1.571, size: [15, 5, 10] });
-  boxes.push({ pos: [0, -80, 0], angle: 1.571, size: [15, 5, 10] });
+  boxes.push({ pos: [160, 0, 0], angle: 0, size: [20, 8, 15] });
+  boxes.push({ pos: [-160, 0, 0], angle: 0, size: [20, 8, 15] });
+  boxes.push({ pos: [0, 160, 0], angle: 1.571, size: [20, 8, 15] });
+  boxes.push({ pos: [0, -160, 0], angle: 1.571, size: [20, 8, 15] });
 
   // Corner bunkers
-  boxes.push({ pos: [120, 120, 0], angle: 0.785, size: [12, 12, 8] });
-  boxes.push({ pos: [-120, -120, 0], angle: 0.785, size: [12, 12, 8] });
-  boxes.push({ pos: [120, -120, 0], angle: -0.785, size: [12, 12, 8] });
-  boxes.push({ pos: [-120, 120, 0], angle: -0.785, size: [12, 12, 8] });
+  boxes.push({ pos: [240, 240, 0], angle: 0.785, size: [18, 18, 12] });
+  boxes.push({ pos: [-240, -240, 0], angle: 0.785, size: [18, 18, 12] });
+  boxes.push({ pos: [240, -240, 0], angle: -0.785, size: [18, 18, 12] });
+  boxes.push({ pos: [-240, 240, 0], angle: -0.785, size: [18, 18, 12] });
 
   // Small scattered boxes for additional cover
-  boxes.push({ pos: [60, -60, 0], angle: 0.3, size: [6, 6, 15] });
-  boxes.push({ pos: [-60, 60, 0], angle: -0.3, size: [6, 6, 15] });
-  boxes.push({ pos: [150, 50, 0], angle: 0, size: [20, 3, 6] });  // long wall
-  boxes.push({ pos: [-150, -50, 0], angle: 0, size: [20, 3, 6] }); // long wall
+  boxes.push({ pos: [120, -120, 0], angle: 0.3, size: [10, 10, 20] });
+  boxes.push({ pos: [-120, 120, 0], angle: -0.3, size: [10, 10, 20] });
+  boxes.push({ pos: [300, 100, 0], angle: 0, size: [30, 5, 10] });  // long wall
+  boxes.push({ pos: [-300, -100, 0], angle: 0, size: [30, 5, 10] }); // long wall
 
   return boxes;
 }
@@ -427,7 +427,7 @@ class MockBZFlagServer {
   constructor(options = {}) {
     this.players = new Map();       // playerId -> PlayerState
     this.nextPlayerId = 0;
-    this.worldSize = options.worldSize || 400.0;
+    this.worldSize = options.worldSize || 800.0;
     this.worldData = buildWorldDatabase(this.worldSize);
     this.worldHash = computeWorldHash(this.worldData);
     this.gameType = options.gameType ?? GameType.OpenFFA;
@@ -1010,9 +1010,6 @@ class MockBZFlagServer {
   _sendStateDump(playerId) {
     const player = this.players.get(playerId);
     if (!player) return;
-
-    // 0) Send BZDB variables (must come before world is used)
-    this._sendSetVars(playerId);
 
     // 1) Send MsgTeamUpdate for all teams
     this._sendTeamUpdate(playerId);

@@ -181,20 +181,20 @@ void TankGeometryMgr::deleteLists()
 
 void TankGeometryMgr::buildLists()
 {
-#ifdef __EMSCRIPTEN__
-    // Tank geometry uses display lists (glGenLists/glNewList/glCallList) which
-    // are no-ops under Emscripten. The geometry draw calls during buildLists()
-    // go straight to the framebuffer instead of being captured, causing rainbow
-    // artifacts. Skip building entirely — tanks will be invisible until display
-    // list rendering is replaced with VBOs.
-    return;
-#endif
     // setup the tread style
     setTreadStyle(BZDB.evalInt("treadStyle"));
 
     // setup the scale factors
     setupScales();
     currentScaleFactor = scaleFactors[Normal];
+
+#ifdef __EMSCRIPTEN__
+    // Under Emscripten, display lists (glGenLists/glNewList/glCallList) are
+    // no-ops. Tank rendering uses TankGeometryMgr::renderPart() which calls
+    // the part build functions directly each frame. We still need setupScales()
+    // and setTreadStyle() above, but skip display list creation.
+    return;
+#endif
     const bool animated = BZDBCache::animatedTreads;
 
     // setup the quality level
