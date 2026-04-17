@@ -237,6 +237,79 @@ Prioritized list of obstacles for Phase 1.4 to tackle. All of these are real (no
 
 ---
 
+## Phase 1.4 — Runtime Debugging — 🔄 In Progress
+
+Game now runs in the browser. Module is stable (no crashes, 30+ seconds runtime).
+
+### What works
+- Sky gradient and ground plane render correctly
+- Custom `web/shell.html` with click-to-play overlay
+- Audio loads (31 sound files at 22050 Hz)
+- ASYNCIFY keeps the main loop alive without blocking the browser
+- **Menu text is visible and readable** (task #14)
+- **Keyboard navigation works** — arrow keys, Enter, Esc all functional in menus
+- Font rendering via TextureFont's Emscripten path (`renderGlyph` instead of display lists)
+- HUD text rendering (alerts, status, scoreboard labels)
+- **Rendering artifacts fixed** (task #13) — mountains, sky, ground, HUD all render cleanly
+- Mountain textures visible on horizon with correct silhouettes
+- **Server connection works** (task #15) — client connects to native bzfs via WebSocket proxy
+- **Gameplay works** — player can join a team, spawn, move, and turn
+- DNS resolution via AresHandler stub (IP addresses + gethostbyname)
+- Full HUD: score, kills, player list, team scores, radar, chat panel
+
+### Rendering fixes applied (task #13)
+
+| Fix | File(s) | Description |
+|---|---|---|
+| Scissor state save/restore | `EmscriptenStubs.cxx` | `glPushAttrib(GL_SCISSOR_BIT)`/`glPopAttrib()` were no-ops, causing scissor from radar (193×193) to leak into `glClear`, producing severe ghosting artifacts across the entire frame. Implemented a minimal attrib stack that saves/restores scissor box and enable state. |
+| GL_ALPHA_TEST guards | `OpenGLGState.cxx` | Guarded all `glEnable/glDisable(GL_ALPHA_TEST)` and `glAlphaFunc` calls with `#ifndef __EMSCRIPTEN__`. The emulation's alpha-test shader path produced incorrect results. |
+| GL_CLIP_PLANE guard | `SceneRenderer.cxx` | Guarded `glClipPlane(GL_CLIP_PLANE0, ...)` setup call — not needed and potentially problematic under WebGL emulation. |
+| Mountain material/normal guards | `BackgroundRenderer.cxx` | Removed `setMaterial`/`setAlphaFunc` from mountain gstate and `glNormal3f` from mountain strip rendering under Emscripten. The material triggered lighting-related shader code in the FFP emulation that produced vertical streak artifacts. |
+| Client-state array guards | `OpenGLGState.cxx` | Disabled default `glEnableClientState(GL_NORMAL_ARRAY/GL_TEXTURE_COORD_ARRAY)` under Emscripten to avoid confusing the FFP emulation when mixed with immediate-mode rendering. |
+| Clip plane guard (BackgroundRenderer) | `BackgroundRenderer.cxx` | Forced `useClipPlane = false` under Emscripten — clip planes not reliably supported in WebGL FFP emulation. |
+| Texture format fix | `OpenGLTexture.cxx` | Expanded `GL_LUMINANCE`/`GL_LUMINANCE_ALPHA` textures to `GL_RGB`/`GL_RGBA` under Emscripten — WebGL 2 core profile doesn't support legacy luminance formats. |
+| Daytime rendering | `web/shell.html` | Fixed `-time` and `-longitude` arguments so the scene renders at solar noon instead of nighttime (previous args caused nighttime due to longitude/UTC mismatch). |
+
+### Networking setup (task #15)
+
+Solo mode (`-solo N`) requires `fork()`/`exec()` of bzfs, which is impossible in Emscripten. Instead, the browser client connects to an external native bzfs server via a WebSocket-to-TCP proxy.
+
+**Architecture:** Browser (WebSocket) → WS proxy (Node.js) → bzfs (TCP)
+
+**Key changes:**
+- `ServerLink.cxx`: Emscripten-specific connection path using `emscripten_sleep()` to yield for WebSocket handshake, and polling recv loop instead of `select()`
+- `AresHandler_stub.cxx`: Now resolves hostnames via `inet_aton`/`gethostbyname` instead of always returning Failed
+- `ServerStartMenu.cxx`: Guarded `fork()`/`exec()` with `#ifdef __EMSCRIPTEN__` error message
+- `CMakeLists.txt`: Added `-s WEBSOCKET_URL="ws://"` for Emscripten socket emulation
+- `tools/ws-proxy/proxy.mjs`: Node.js WebSocket-to-TCP proxy
+- `tools/ws-proxy/start-server.sh`: Helper to start bzfs + websockify
+
+### What doesn't work yet
+- Display list rendering is stubbed — stars and some background elements are invisible
+- Solo mode with robots (requires separate native client connecting to same server)
+- HTTP/curl is stubbed (no MOTD, downloads, server list)
+
+### Files modified during runtime debugging
+
+| File | Changes |
+|---|---|
+| `src/ogl/OpenGLLight.cxx` | Guard `GL_SPOT_EXPONENT` / `GL_*_ATTENUATION` (unsupported pnames); guard `glGetIntegerv(GL_MAX_LIGHTS)` |
+| `src/ogl/OpenGLMaterial.cxx` | Guard `GL_EMISSION` / `GL_SPECULAR` / `GL_SHININESS`; guard `glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER)` |
+| `src/ogl/OpenGLGState.cxx` | Guard `glHint(GL_PERSPECTIVE_CORRECTION_HINT)` |
+| `src/bzflag/bzflag.cxx` | Disable fullscreen for Emscripten; guard `glHint(GL_PERSPECTIVE_CORRECTION_HINT)` |
+| `src/bzflag/SceneRenderer.cxx` | Guard `glHint` for `GL_LINE_SMOOTH_HINT`, `GL_POINT_SMOOTH_HINT`, `GL_POLYGON_SMOOTH_HINT`, `GL_FOG_HINT`; guard `glGetIntegerv(GL_MAX_LIGHTS)` (default to 8) |
+| `src/bzflag/CMakeLists.txt` | `ASYNCIFY_STACK_SIZE=65536`, `MIN_WEBGL_VERSION=1`, `GL_UNSAFE_OPTS=0`, `ASSERTIONS=0`, custom shell-file |
+| `src/bzflag/bzflag.cxx` | Force `BZDB "lighting"` to `"0"` under Emscripten so vertex colors pass through correctly |
+| `src/bzflag/playing.cxx` | Disable `GL_DEPTH_TEST` and `GL_LIGHTING` before dialog rendering in `renderDialog()` |
+| `src/bzflag/HUDRenderer.cxx` | Disable `GL_DEPTH_TEST` and `GL_LIGHTING` in `setOneToOnePrj()` for HUD overlay rendering |
+| `src/bzflag/HUDuiControl.cxx` | Change `glColor3fv`/`glColor3f` to `glColor4f` with explicit alpha=1.0 (Emscripten emulation fix) |
+| `src/3D/TextureFont.cxx` | Guard `glNormal3f` in `renderGlyph()` with `#ifndef __EMSCRIPTEN__` — fixes glyph distortion |
+| `src/bzflag/ServerLink.cxx` | Emscripten connection path: `emscripten_sleep()` for WS handshake, polling recv loop |
+| `src/bzflag/ServerStartMenu.cxx` | Guard `fork()`/`exec()` with `#ifdef __EMSCRIPTEN__` — show error message |
+| `src/net/AresHandler_stub.cxx` | Functional DNS resolution via `inet_aton`/`gethostbyname` (was always-fail stub) |
+
+---
+
 ## Known Issues / TODO
 
 ### Phase 1.3+
@@ -244,16 +317,23 @@ Prioritized list of obstacles for Phase 1.4 to tackle. All of these are real (no
 - [x] Emscripten CMake build — first run, expect errors (task #9). Resolved across 13 iterations; see "Top remaining Emscripten issues" above.
 - [x] `AresHandler_stub.cxx`, `Ping_stub.cxx`, `multicast_stub.cxx` — cleared final link errors (task #10). `bzflag.html`/`.js`/`.wasm`/`.data` produced.
 
-### Phase 1.4 (upcoming)
+### Phase 1.4
+- [x] Game runs in browser without crashes
+- [x] Sky/ground rendering works
+- [x] Guard unsupported `glHint` targets (`GL_PERSPECTIVE_CORRECTION_HINT`, `GL_LINE_SMOOTH_HINT`, `GL_POINT_SMOOTH_HINT`, `GL_POLYGON_SMOOTH_HINT`, `GL_FOG_HINT`)
+- [x] Guard `glGetIntegerv(GL_MAX_LIGHTS)` — not available in WebGL; default to 8
+- [x] Guard `glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER)` in `OpenGLMaterial.cxx`
+- [ ] Display list recording/replay for fonts, stars, UI (task #11)
 - [ ] ASYNCIFY integration for game loop (playing.cxx:7015-7025 token auth blocker)
 - [ ] IDBFS mount for config persistence (bzflag.cxx init)
 - [ ] Data asset preloading verification
 
-### Phase 1.5 (upcoming)
-- [ ] ServerLink.cxx WebSocket transport
+### Phase 1.5
+- [x] ServerLink.cxx WebSocket transport (task #15) — client connects via `ws://` to a proxied bzfs
+- [x] AresHandler stub with real DNS resolution (task #15)
+- [x] WebSocket proxy (`tools/ws-proxy/proxy.mjs`)
 - [ ] cURLManager → emscripten_fetch port
-- [ ] AresHandler stub for Emscripten
-- [ ] WebSocket proxy (tools/ws-proxy/proxy.js)
+- [ ] Solo mode with robots (requires native client or server-side bots)
 
 ---
 
@@ -263,11 +343,22 @@ Prioritized list of obstacles for Phase 1.4 to tackle. All of these are real (no
 - `include/bzfgl.h`
 - `include/AresHandler.h` (Emscripten shim)
 - `include/cURLManager.h` (Emscripten shim)
-- `src/ogl/OpenGLGState.cxx`
-- `src/ogl/OpenGLTexture.cxx`
-- `src/bzflag/SceneRenderer.cxx`
+- `src/ogl/OpenGLGState.cxx` (GLEW guards, stipple guards, `glHint` guard, GL_ALPHA_TEST guards, client-state array guards)
+- `src/ogl/OpenGLTexture.cxx` (GL_LUMINANCE → GL_RGB expansion for WebGL)
+- `src/ogl/EmscriptenStubs.cxx` (scissor-aware glPushAttrib/glPopAttrib implementation)
+- `src/ogl/OpenGLLight.cxx` (guard `GL_SPOT_EXPONENT`/attenuation pnames, `GL_MAX_LIGHTS`)
+- `src/ogl/OpenGLMaterial.cxx` (guard `GL_EMISSION`/`GL_SPECULAR`/`GL_SHININESS`, `glLightModeli`)
+- `src/bzflag/bzflag.cxx` (fullscreen guard, `glHint` guard, force lighting off for Emscripten)
+- `src/bzflag/playing.cxx` (disable depth test + lighting before dialog rendering)
+- `src/bzflag/HUDRenderer.cxx` (disable depth test + lighting in `setOneToOnePrj`)
+- `src/bzflag/HUDuiControl.cxx` (`glColor3fv`/`glColor3f` → `glColor4f` with explicit alpha)
+- `src/bzflag/SceneRenderer.cxx` (`glLightModeli`, `glHint`, `GL_MAX_LIGHTS` guards, `glClipPlane` guard)
 - `src/bzflag/RadarRenderer.cxx`
-- `src/bzflag/BackgroundRenderer.cxx` (GLEW_EXT_texture_edge_clamp guard)
+- `src/bzflag/BackgroundRenderer.cxx` (GLEW_EXT_texture_edge_clamp guard, clip plane guard, mountain material/normal guards)
+- `src/3D/TextureFont.cxx` (guard `glNormal3f` in `renderGlyph` for Emscripten)
+- `src/bzflag/ServerLink.cxx` (Emscripten connection: `emscripten_sleep` for WS handshake, polling recv)
+- `src/bzflag/ServerStartMenu.cxx` (guard `fork()`/`exec()` under Emscripten)
+- `src/bzflag/CMakeLists.txt` (Emscripten link flags: ASYNCIFY, WebGL version, shell-file)
 - `src/common/TextUtils.cxx` (curl URL-encode fallback)
 - `src/platform/SDL2Window.cxx`
 - `src/platform/SDL2Display.cxx`
@@ -276,7 +367,7 @@ Prioritized list of obstacles for Phase 1.4 to tackle. All of these are real (no
 ### New Emscripten-only source files
 - `src/ogl/EmscriptenStubs.cxx` — no-op stubs for display lists, `glPushAttrib`, `glRect*`, stipple, scalar light/material, GLU quadrics, `gluProject`, `glLogicOp`
 - `src/common/cURLManager_stub.cxx` — no-op stubs for the full `cURLManager` + `ResourceGetter` classes
-- `src/net/AresHandler_stub.cxx` — no-op stubs for c-ares DNS resolver
+- `src/net/AresHandler_stub.cxx` — DNS resolution via `inet_aton`/`gethostbyname` (upgraded from no-op)
 - `src/net/Ping_stub.cxx` — no-op stubs for `PingPacket`
 - `src/net/multicast_stub.cxx` — no-op stubs for UDP broadcast socket helpers
 
@@ -288,6 +379,10 @@ Prioritized list of obstacles for Phase 1.4 to tackle. All of these are real (no
 - `src/CMakeLists.txt`
 - `src/*/CMakeLists.txt` (14 files)
 - `web/shell.html`
+
+### New files (tools)
+- `tools/ws-proxy/proxy.mjs` — Node.js WebSocket-to-TCP proxy for bridging browser clients to bzfs
+- `tools/ws-proxy/start-server.sh` — Helper script to start bzfs + websockify
 
 ### New files (Docker — pending)
 - `docker/Dockerfile.native-cmake`
