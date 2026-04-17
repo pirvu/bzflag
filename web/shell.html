@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BZFlag</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #1a1a2e; display: flex; align-items: center; justify-content: center; }
+
+  #canvas {
+    display: block;
+    width: 800px;
+    height: 600px;
+    outline: none;
+    border: 1px solid #333;
+  }
+
+  #loading {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    z-index: 10;
+  }
+
+  #loading h1 {
+    font-size: 2rem;
+    margin-bottom: 1.5rem;
+    color: #ffffff;
+  }
+
+  #progress-container {
+    width: 320px;
+    height: 8px;
+    background: #2a2a4a;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  #progress-bar {
+    width: 0%;
+    height: 100%;
+    background: #4a9eff;
+    border-radius: 4px;
+    transition: width 0.2s ease;
+  }
+
+  #progress-text {
+    margin-top: 0.75rem;
+    font-size: 0.875rem;
+    color: #999;
+  }
+
+  #play-overlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(26, 26, 46, 0.85);
+    z-index: 20;
+    cursor: pointer;
+  }
+
+  #play-button {
+    padding: 1rem 2.5rem;
+    font-size: 1.25rem;
+    font-family: inherit;
+    color: #ffffff;
+    background: #4a9eff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  #play-button:hover { background: #3a8eef; }
+  #play-button:active { background: #2a7edf; }
+</style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div id="loading">
+  <h1>BZFlag</h1>
+  <div id="progress-container">
+    <div id="progress-bar"></div>
+  </div>
+  <div id="progress-text">Loading...</div>
+</div>
+
+<!-- Click-to-play overlay (for audio autoplay policy) -->
+<div id="play-overlay">
+  <button id="play-button">Click to Play</button>
+</div>
+
+<!-- Game canvas -->
+<canvas id="canvas" tabindex="0"></canvas>
+
+<script>
+  var Module = {
+    canvas: (function() { return document.getElementById('canvas'); })(),
+
+    setStatus: function(text) {
+      var progressText = document.getElementById('progress-text');
+      var progressBar = document.getElementById('progress-bar');
+      if (!text) {
+        // Loading complete — show play overlay
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('play-overlay').style.display = 'flex';
+        return;
+      }
+      progressText.textContent = text;
+      // Parse "Downloading data... (X/Y)" format
+      var match = text.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+)/);
+      if (match) {
+        var loaded = parseInt(match[1]);
+        var total = parseInt(match[2]);
+        if (total > 0) {
+          progressBar.style.width = ((loaded / total) * 100) + '%';
+        }
+      }
+    },
+
+    onRuntimeInitialized: function() {
+      // Runtime ready — loading screen will be hidden by setStatus('')
+    },
+
+    print: function(text) {
+      if (typeof console !== 'undefined') console.log(text);
+    },
+
+    printErr: function(text) {
+      if (typeof console !== 'undefined') console.warn(text);
+    }
+  };
+
+  // Click-to-play: resume AudioContext and start the game
+  (function() {
+    var overlay = document.getElementById('play-overlay');
+    var playBtn = document.getElementById('play-button');
+    var canvas = document.getElementById('canvas');
+    var audioResumed = false;
+
+    function resumeAudio() {
+      if (audioResumed) return;
+      audioResumed = true;
+      // Resume any AudioContext created by SDL or Emscripten
+      if (typeof Module !== 'undefined' && Module.SDL && Module.SDL.audioContext) {
+        Module.SDL.audioContext.resume();
+      }
+      // Also try the global Emscripten audio context
+      if (typeof SDL !== 'undefined' && SDL.audioContext) {
+        SDL.audioContext.resume();
+      }
+    }
+
+    function startGame() {
+      resumeAudio();
+      overlay.style.display = 'none';
+      canvas.focus();
+    }
+
+    playBtn.addEventListener('click', startGame);
+    overlay.addEventListener('click', function(e) {
+      if (e.target === overlay) startGame();
+    });
+
+    // Also resume audio on first user interaction with the canvas
+    canvas.addEventListener('click', resumeAudio, { once: true });
+    canvas.addEventListener('keydown', resumeAudio, { once: true });
+  })();
+
+  // Set fixed canvas resolution
+  (function() {
+    var canvas = document.getElementById('canvas');
+    canvas.width = 800;
+    canvas.height = 600;
+  })();
+</script>
+
+{{{ SCRIPT }}}
+
+</body>
+</html>

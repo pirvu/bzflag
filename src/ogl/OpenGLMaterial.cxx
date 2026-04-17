@@ -112,9 +112,11 @@ void            OpenGLMaterial::Rep::execute()
         list = glGenLists(1);
         glNewList(list, GL_COMPILE_AND_EXECUTE);
         {
+#ifndef __EMSCRIPTEN__
             glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, specular);
             glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, emissive);
             glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shininess);
+#endif
             if (RENDERER.useQuality() > 0)
             {
                 if  ((specular[0] > 0.0f) ||

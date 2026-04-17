@@ -666,6 +666,9 @@ void dumpResources()
 
 static bool     needsFullscreen()
 {
+#ifdef __EMSCRIPTEN__
+    return false;
+#endif
     // fullscreen if not in a window
     if (!BZDB.isSet("_window")) return true;
 

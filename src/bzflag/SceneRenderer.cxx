@@ -136,7 +136,9 @@ void SceneRenderer::setWindow(MainWindow* _window)
     canUseHiddenLine = true;
 
     // prepare context with stuff that'll never change
+#ifndef __EMSCRIPTEN__
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);
+#endif
     glGetIntegerv(GL_MAX_LIGHTS, &maxLights);
     reservedLights = 1;           // only one light between sun and moon
     maxLights -= reservedLights;      // can't use the reserved lights
@@ -259,6 +261,7 @@ void SceneRenderer::setQuality(int value)
     else
         BZDB.set("moonSegments","12");
 
+#ifndef __EMSCRIPTEN__
     if (useQualityValue > 0)
     {
         // this can be modified by OpenGLMaterial
@@ -289,6 +292,7 @@ void SceneRenderer::setQuality(int value)
                       GL_SINGLE_COLOR_EXT);
 #  endif
 #endif
+#endif // __EMSCRIPTEN__
 
     BZDB.set("useQuality", TextUtils::format("%d", value));
 }
@@ -815,13 +819,19 @@ void SceneRenderer::render(bool _lastFrame, bool _sameFrame,
             float stipple = mirrorColor[3];
             glColor3fv(mirrorColor);
             OpenGLGState::setStipple(stipple);
+#ifndef __EMSCRIPTEN__
             glEnable(GL_POLYGON_STIPPLE);
+#endif
         }
         glRectf(-extent, -extent, +extent, +extent);
         if (BZDBCache::blend && (useQualityValue >= 1))
             glDisable(GL_BLEND);
         else
+        {
+#ifndef __EMSCRIPTEN__
             glDisable(GL_POLYGON_STIPPLE);
+#endif
+        }
         if (mapFog)
         {
             glMatrixMode(GL_PROJECTION);
@@ -909,7 +919,9 @@ void SceneRenderer::renderScene(bool UNUSED(_lastFrame), bool UNUSED(_sameFrame)
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
         }
+#ifndef __EMSCRIPTEN__
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+#endif
     }
 
     // prepare z buffer
@@ -1009,9 +1021,13 @@ void SceneRenderer::renderScene(bool UNUSED(_lastFrame), bool UNUSED(_sameFrame)
         {
             glDisable(GL_POLYGON_OFFSET_FILL);
             glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+#ifndef __EMSCRIPTEN__
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+#endif
             doRender();
+#ifndef __EMSCRIPTEN__
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+#endif
         }
 
         OpenGLGState::resetState();
@@ -1035,8 +1051,10 @@ void SceneRenderer::renderScene(bool UNUSED(_lastFrame), bool UNUSED(_sameFrame)
     }
 
     // back to original state
+#ifndef __EMSCRIPTEN__
     if (!useHiddenLineOn && useWireframeOn)
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+#endif
     glPopMatrix();
 
     // do depth complexity
@@ -1161,13 +1179,19 @@ void SceneRenderer::renderDimming()
         else
         {
             OpenGLGState::setStipple(density);
+#ifndef __EMSCRIPTEN__
             glEnable(GL_POLYGON_STIPPLE);
+#endif
         }
         glRectf(-1.0f, -1.0f, +1.0f, +1.0f);
         if (BZDBCache::blend && (useQualityValue >= 1))
             glDisable(GL_BLEND);
         else
+        {
+#ifndef __EMSCRIPTEN__
             glDisable(GL_POLYGON_STIPPLE);
+#endif
+        }
     }
     return;
 }

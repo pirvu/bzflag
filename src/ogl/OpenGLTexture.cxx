@@ -145,6 +145,12 @@ void OpenGLTexture::initContext()
     // compute next mipmap from current mipmap to save time.
     setFilter(filter);
     glBindTexture(GL_TEXTURE_2D, list);
+#ifdef __EMSCRIPTEN__
+    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat,
+                 scaledWidth, scaledHeight,
+                 0, internalFormat, GL_UNSIGNED_BYTE, image);
+    glGenerateMipmap(GL_TEXTURE_2D);
+#else
     if (GLEW_VERSION_1_4)
     {
         glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE);
@@ -158,6 +164,7 @@ void OpenGLTexture::initContext()
                           scaledWidth, scaledHeight,
                           internalFormat, GL_UNSIGNED_BYTE, image);
     }
+#endif
     glBindTexture(GL_TEXTURE_2D, 0);
 
     return;
@@ -166,6 +173,10 @@ void OpenGLTexture::initContext()
 
 void OpenGLTexture::setupImage(const GLubyte* pixels)
 {
+#ifdef __EMSCRIPTEN__
+    scaledWidth = width;
+    scaledHeight = height;
+#else
     if (GLEW_ARB_texture_non_power_of_two)
     {
         scaledWidth = width;
@@ -203,6 +214,7 @@ void OpenGLTexture::setupImage(const GLubyte* pixels)
         if (scaledHeight > maxTextureSize)
             scaledHeight = maxTextureSize;
     }
+#endif
 
     // copy the data into a 4-byte aligned buffer
     GLubyte* unaligned = new GLubyte[4 * width * height + 4];
@@ -212,6 +224,10 @@ void OpenGLTexture::setupImage(const GLubyte* pixels)
     // scale the image if required
     if ((scaledWidth != width) || (scaledHeight != height))
     {
+#ifdef __EMSCRIPTEN__
+        scaledWidth = width;
+        scaledHeight = height;
+#else
         GLubyte* unalignedScaled = new GLubyte[4 * scaledWidth * scaledHeight + 4];
         GLubyte* alignedScaled = (GLubyte*)(((unsigned long)unalignedScaled & ~3) + 4);
 
@@ -224,6 +240,7 @@ void OpenGLTexture::setupImage(const GLubyte* pixels)
         aligned = alignedScaled;
         logDebugMessage(1,"Scaling texture from %ix%i to %ix%i\n",
                         width, height, scaledWidth, scaledHeight);
+#endif
     }
 
     // set the image

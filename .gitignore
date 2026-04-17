@@ -137,3 +137,11 @@ Thumbs.db
 /MSVC/HoldTheFlag_Win32_Debug/*.ib_pdb_index
 *.ib_pdb_index
 
+**/node_modules
+
+# CMake build directories
+/build-native/
+/build-emscripten/
+
+# IDE
+ide.yml

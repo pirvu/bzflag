@@ -19,7 +19,20 @@
 #include "network.h"
 
 // system headers
+#ifndef __EMSCRIPTEN__
 #include <curl/curl.h>
+#else
+/* Emscripten: libcurl is unavailable. Provide minimal shims so the header
+ * still compiles in files that transitively include it. cURLManager.cxx is
+ * excluded from the Emscripten build; networking will be ported to
+ * emscripten_fetch in a later phase. */
+typedef void CURL;
+typedef void CURLM;
+typedef int CURLcode;
+typedef long long curl_off_t;
+typedef int (*curl_xferinfo_callback)(void*, curl_off_t, curl_off_t, curl_off_t, curl_off_t);
+#define CURL_ERROR_SIZE 256
+#endif
 #include <string>
 #include <map>
 #include <vector>

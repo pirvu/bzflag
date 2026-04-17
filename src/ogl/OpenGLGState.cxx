@@ -462,8 +462,10 @@ void            OpenGLGStateState::resetOpenGLState() const
     }
     if (sorted.hasSphereMap)
     {
+#ifndef __EMSCRIPTEN__
         glDisable(GL_TEXTURE_GEN_S);
         glDisable(GL_TEXTURE_GEN_T);
+#endif
     }
     if (sorted.hasMaterial)
     {
@@ -482,8 +484,10 @@ void            OpenGLGStateState::resetOpenGLState() const
     }
     if (unsorted.hasStipple)
     {
+#ifndef __EMSCRIPTEN__
         glDisable(GL_LINE_STIPPLE);
         glDisable(GL_POLYGON_STIPPLE);
+#endif
     }
     if (!unsorted.hasCulling || unsorted.culling != GL_BACK)
     {
@@ -557,18 +561,22 @@ void            OpenGLGStateState::setOpenGLState(
         {
             if (!oldState->sorted.hasSphereMap)
             {
+#ifndef __EMSCRIPTEN__
                 glTexGenf(GL_S, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
                 glTexGenf(GL_T, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
                 glEnable(GL_TEXTURE_GEN_S);
                 glEnable(GL_TEXTURE_GEN_T);
+#endif
             }
         }
         else
         {
             if (oldState->sorted.hasSphereMap)
             {
+#ifndef __EMSCRIPTEN__
                 glDisable(GL_TEXTURE_GEN_S);
                 glDisable(GL_TEXTURE_GEN_T);
+#endif
             }
         }
 
@@ -646,16 +654,20 @@ void            OpenGLGStateState::setOpenGLState(
             else
             {
                 OpenGLGState::setStippleIndex(unsorted.stippleIndex);
+#ifndef __EMSCRIPTEN__
                 glEnable(GL_LINE_STIPPLE);
                 glEnable(GL_POLYGON_STIPPLE);
+#endif
             }
         }
         else
         {
             if (oldState->unsorted.hasStipple)
             {
+#ifndef __EMSCRIPTEN__
                 glDisable(GL_LINE_STIPPLE);
                 glDisable(GL_POLYGON_STIPPLE);
+#endif
             }
         }
 
@@ -744,15 +756,19 @@ void            OpenGLGStateState::setOpenGLState(
         // spherical texture mapping
         if (sorted.hasSphereMap)
         {
+#ifndef __EMSCRIPTEN__
             glTexGenf(GL_S, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
             glTexGenf(GL_T, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
             glEnable(GL_TEXTURE_GEN_S);
             glEnable(GL_TEXTURE_GEN_T);
+#endif
         }
         else
         {
+#ifndef __EMSCRIPTEN__
             glDisable(GL_TEXTURE_GEN_S);
             glDisable(GL_TEXTURE_GEN_T);
+#endif
         }
 
         // lighting and material
@@ -793,13 +809,17 @@ void            OpenGLGStateState::setOpenGLState(
         if (unsorted.hasStipple)
         {
             OpenGLGState::setStippleIndex(unsorted.stippleIndex);
+#ifndef __EMSCRIPTEN__
             glEnable(GL_LINE_STIPPLE);
             glEnable(GL_POLYGON_STIPPLE);
+#endif
         }
         else
         {
+#ifndef __EMSCRIPTEN__
             glDisable(GL_LINE_STIPPLE);
             glDisable(GL_POLYGON_STIPPLE);
+#endif
         }
 
         // texture mapping
@@ -1322,6 +1342,7 @@ void OpenGLGState::initContext()
         return;
     }
 
+#ifndef __EMSCRIPTEN__
     GLenum err = glewInit();
     // Running the client using SDL's Wayland driver causes glewInit() to return GLEW_ERROR_NO_GLX_DISPLAY. We do not
     // check for or use GLX extensions, so I think it's safe to allow for this error code.
@@ -1332,6 +1353,7 @@ void OpenGLGState::initContext()
         printf("initContext() Error: %s\n", glewGetErrorString(err));
         return;
     }
+#endif
 
     // call all of the freeing functions first
     logDebugMessage(3,"ContextInitializer::executeFreeFuncs() start\n");
@@ -1380,8 +1402,10 @@ void OpenGLGState::initGLState()
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_LINE_SMOOTH);
     glDisable(GL_POINT_SMOOTH);
+#ifndef __EMSCRIPTEN__
     glDisable(GL_LINE_STIPPLE);
     glDisable(GL_POLYGON_STIPPLE);
+#endif
     glEnable(GL_CULL_FACE);
     glShadeModel(GL_FLAT);
     glDisable(GL_ALPHA_TEST);
@@ -1398,7 +1422,7 @@ void OpenGLGState::initGLState()
 // utility to check if an OpenGL extension is supported on this system
 bool OpenGLGState::initGLExtensions()
 {
-
+#ifndef __EMSCRIPTEN__
     hasAnisotropicFiltering = GLEW_EXT_texture_filter_anisotropic;
 
     if (GLEW_ARB_framebuffer_object)
@@ -1407,6 +1431,7 @@ bool OpenGLGState::initGLExtensions()
         glGetIntegerv(GL_MAX_SAMPLES, &sampleCount);
         maxSamples = sampleCount;
     }
+#endif
 
     return false;
 }

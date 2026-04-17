@@ -791,10 +791,15 @@ void BackgroundRenderer::setupSkybox()
         bzmats[i]->setReference();
 
     // setup the wrap mode
+#ifdef __EMSCRIPTEN__
+    // WebGL requires GL_CLAMP_TO_EDGE; GL_CLAMP is not defined in WebGL.
+    skyboxWrapMode = GL_CLAMP_TO_EDGE;
+#else
     if (GLEW_EXT_texture_edge_clamp)
         skyboxWrapMode = GL_CLAMP_TO_EDGE;
     else
         skyboxWrapMode = GL_CLAMP;
+#endif
 
     // setup the corner colors
     const int cornerFaces[8][3] =

@@ -26,6 +26,21 @@ SDLDisplay::SDLDisplay() : mouseWheelStopEvent(SDL_RegisterEvents(1))
 
     int defaultResolutionIndex = 0;
     ResInfo** _resolutions;
+
+#ifdef __EMSCRIPTEN__
+    int _numResolutions = 1;
+    _resolutions = new ResInfo*[1];
+    int canvasW = 800, canvasH = 600;
+    SDL_DisplayMode mode;
+    if (SDL_GetCurrentDisplayMode(0, &mode) == 0)
+    {
+        canvasW = mode.w;
+        canvasH = mode.h;
+    }
+    char name[80];
+    sprintf(name, "%dx%d    ", canvasW, canvasH);
+    _resolutions[0] = new ResInfo(name, canvasW, canvasH, 0);
+#else
     int _numResolutions = SDL_GetNumDisplayModes(0);
     SDL_DisplayMode mode;
     std::vector<int> h;
@@ -75,6 +90,7 @@ SDLDisplay::SDLDisplay() : mouseWheelStopEvent(SDL_RegisterEvents(1))
         sprintf(name, "%dx%d    ", w[i], h[i]);
         _resolutions[i] = new ResInfo(name, w[i], h[i], 0);
     }
+#endif /* __EMSCRIPTEN__ */
 
     // register modes
     initResolutions(_resolutions, _numResolutions, defaultResolutionIndex);
@@ -627,6 +643,7 @@ bool SDLDisplay::setupEvent(BzfEvent& _event, const SDL_Event& event) const
             _event.type = BzfEvent::Map;
             break;
 #ifdef SDL_WINDOW_MOUSE_CAPTURE
+#ifndef __EMSCRIPTEN__
         case SDL_WINDOWEVENT_FOCUS_GAINED:
         {
             // make sure the mouse is captured in case the cursor is (or moves) outside the window
@@ -639,6 +656,7 @@ bool SDLDisplay::setupEvent(BzfEvent& _event, const SDL_Event& event) const
             }
             break;
         }
+#endif /* __EMSCRIPTEN__ */
 #endif
         default:
             break;
