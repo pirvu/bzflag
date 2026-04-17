@@ -284,9 +284,31 @@ Solo mode (`-solo N`) requires `fork()`/`exec()` of bzfs, which is impossible in
 - `tools/ws-proxy/proxy.mjs`: Node.js WebSocket-to-TCP proxy
 - `tools/ws-proxy/start-server.sh`: Helper to start bzfs + websockify
 
+### Solo mode with in-browser mock server (task #16)
+
+BZFlag's `-solo N` mode normally `fork()`/`exec()`s a local bzfs server, which is impossible in the browser. Instead, a JavaScript mock BZFlag server (`web/mock-server.js`) implements the BZFlag binary protocol directly in the browser, with WebSocket interception routing all localhost connections through it.
+
+**Architecture:** Emscripten WASM client → WebSocket interception → MockBZFlagServer (in-page JS)
+
+**Key files:**
+- `web/mock-server.js` — Full mock BZFlag server implementing the binary protocol
+- `web/shell.html` — WebSocket interception + Module.arguments for `-solo 3`
+
+**Protocol sequence fix:** The mock server initially sent MsgGameSettings, MsgTeamUpdate, and MsgAddPlayer immediately in the MsgEnter handler. This caused the client to process MsgAddPlayer before the world was downloaded, resulting in `remotePlayers` being NULL → memory access out of bounds crash. Fixed by deferring the state dump (MsgTeamUpdate, MsgAddPlayer, MsgPlayerInfo) until after the last world chunk is delivered (`_handleGetWorld` with `bytesLeft=0`). Robot (ComputerPlayer) connections get immediate MsgAddPlayer broadcast since they don't download the world.
+
+**What works:**
+- Player connects and completes the full BZFlag join protocol
+- World download (empty world with valid zlib-compressed data)
+- Player spawns (press 'i') and can move
+- Robots connect, enter, and receive spawn positions via MsgAlive
+- MsgAlive format correct: `[u8 id][float32[3] pos][float32 azimuth]` = 17 bytes, big-endian
+- Player position updates relayed between players
+- Score tracking (kills/deaths)
+- Chat message relay
+- Lag ping echo
+
 ### What doesn't work yet
 - Display list rendering is stubbed — stars and some background elements are invisible
-- Solo mode with robots (requires separate native client connecting to same server)
 - HTTP/curl is stubbed (no MOTD, downloads, server list)
 
 ### Files modified during runtime debugging
@@ -333,7 +355,7 @@ Solo mode (`-solo N`) requires `fork()`/`exec()` of bzfs, which is impossible in
 - [x] AresHandler stub with real DNS resolution (task #15)
 - [x] WebSocket proxy (`tools/ws-proxy/proxy.mjs`)
 - [ ] cURLManager → emscripten_fetch port
-- [ ] Solo mode with robots (requires native client or server-side bots)
+- [x] Solo mode with in-browser mock server (task #16) — robots spawn, no WASM crash
 
 ---
 
@@ -379,6 +401,9 @@ Solo mode (`-solo N`) requires `fork()`/`exec()` of bzfs, which is impossible in
 - `src/CMakeLists.txt`
 - `src/*/CMakeLists.txt` (14 files)
 - `web/shell.html`
+
+### New files (web)
+- `web/mock-server.js` — In-browser mock BZFlag server for solo mode (implements binary protocol)
 
 ### New files (tools)
 - `tools/ws-proxy/proxy.mjs` — Node.js WebSocket-to-TCP proxy for bridging browser clients to bzfs

@@ -42,6 +42,8 @@ const Msg = {
   WantWHash:         0x7768,
   WantSettings:      0x7773,
   LagPing:           0x7069,
+  UDPLinkRequest:    0x6f66,
+  UDPLinkEstablished:0x6f67,
 };
 
 // World database codes
@@ -525,6 +527,8 @@ class MockBZFlagServer {
       case Msg.Exit:         return this.onDisconnect(playerId);
       case Msg.AutoPilot:    return this._broadcastRaw(code, playerId, payload);
       case Msg.GMUpdate:     return this._broadcastRaw(code, playerId, payload);
+      case Msg.UDPLinkRequest:    return this._handleUDPLinkRequest(playerId);
+      case Msg.UDPLinkEstablished: return; // silently ignore
       default:
         this.log(`Unhandled message 0x${code.toString(16)} from player ${playerId}`);
     }
@@ -565,24 +569,30 @@ class MockBZFlagServer {
     new DataView(acceptPayload).setUint8(0, playerId);
     this._sendTo(playerId, Msg.Accept, acceptPayload);
 
-    // 2) Send MsgGameSettings
-    this._sendGameSettings(playerId);
-
-    // 3) Send MsgTeamUpdate for all teams
-    this._sendTeamUpdate(playerId);
-
-    // 4) Send MsgAddPlayer for all existing players (not this one)
-    for (const [id, other] of this.players) {
-      if (id !== playerId && other.entered) {
-        this._sendAddPlayer(playerId, other);
-      }
+    // Bot players (robots) don't download the world — they just need MsgAccept.
+    // The real server skips sending game info to bots (see bzfs.cxx:2387).
+    // But we DO need to broadcast MsgAddPlayer for the bot to other players
+    // (so the main player knows about the robot).
+    if (player.type === PlayerType.Computer) {
+      // Broadcast MsgAddPlayer for this bot to all entered players
+      this._broadcastAddPlayer(player);
+      this._sendPlayerInfo(playerId, player);
+      return;
     }
 
-    // 5) Broadcast MsgAddPlayer for the new player to everyone
-    this._broadcastAddPlayer(player);
-
-    // 6) Send MsgPlayerInfo for the new player
-    this._sendPlayerInfo(playerId, player);
+    // For human players: the client drives the join protocol after MsgAccept:
+    //   negotiate flags → request settings → request world hash → download world
+    // The client calls enteringServer() when it processes MsgAddPlayer-for-self,
+    // which triggers addRobots(). This requires remotePlayers to be allocated
+    // from the world object, which only happens after the world is downloaded.
+    //
+    // In our async mock server, all messages arrive almost instantly. If we
+    // send MsgAddPlayer here, the client processes it before the world is
+    // downloaded, causing remotePlayers to be NULL → crash.
+    //
+    // Fix: defer the state dump until after the world download completes
+    // (last MsgGetWorld chunk with bytesLeft=0).
+    player._needsStateDump = true;
   }
 
   _handleWantSettings(playerId) {
@@ -632,6 +642,25 @@ class MockBZFlagServer {
       new Uint8Array(respPayload).set(this.worldData.slice(ptr, ptr + size), 4);
     }
     this._sendTo(playerId, Msg.GetWorld, respPayload);
+
+    // After the last world chunk is delivered, send the deferred state dump.
+    // The client needs the world to be fully downloaded before it can process
+    // MsgAddPlayer (which triggers enteringServer → addRobots, requiring
+    // remotePlayers to be allocated from the world object).
+    if (left === 0) {
+      const player = this.players.get(playerId);
+      if (player && player._needsStateDump) {
+        player._needsStateDump = false;
+        this.log(`Sending deferred state dump for player ${playerId}`);
+        this._sendStateDump(playerId);
+      }
+    }
+  }
+
+  _handleUDPLinkRequest(playerId) {
+    // The real server would set up a UDP channel. In our mock server,
+    // just silently ignore — the client will fall back to TCP only.
+    this.log(`Ignoring UDP link request from player ${playerId}`);
   }
 
   // ── Gameplay message handlers ─────────────────────────────────────
@@ -639,6 +668,8 @@ class MockBZFlagServer {
   _handleAlive(playerId) {
     const player = this.players.get(playerId);
     if (!player) return;
+
+    this.log(`_handleAlive for player ${playerId} "${player.callSign}"`);
 
     // Generate a spawn position (random within world bounds)
     const half = this.worldSize / 2 * 0.9;
@@ -818,6 +849,32 @@ class MockBZFlagServer {
     view.setUint8(1, player.id);    // player id
     view.setUint8(2, 0);            // attributes (none)
     this._sendTo(targetPlayerId, Msg.PlayerInfo, payload);
+  }
+
+  /**
+   * Send the deferred state dump to a player after world download completes.
+   * This includes team updates, existing player info, and the player's own
+   * MsgAddPlayer (which the client uses to trigger enteringServer()).
+   */
+  _sendStateDump(playerId) {
+    const player = this.players.get(playerId);
+    if (!player) return;
+
+    // 1) Send MsgTeamUpdate for all teams
+    this._sendTeamUpdate(playerId);
+
+    // 2) Send MsgAddPlayer for all existing players (not this one)
+    for (const [id, other] of this.players) {
+      if (id !== playerId && other.entered) {
+        this._sendAddPlayer(playerId, other);
+      }
+    }
+
+    // 3) Broadcast MsgAddPlayer for the new player to everyone
+    this._broadcastAddPlayer(player);
+
+    // 4) Send MsgPlayerInfo for the new player
+    this._sendPlayerInfo(playerId, player);
   }
 
   _sendScoreUpdate(player) {
