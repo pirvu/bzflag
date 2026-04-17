@@ -166,6 +166,15 @@
       if (e.key === 'Tab') e.preventDefault();
     });
   })();
+
+  // Auto-save config to localStorage on page unload
+  window.addEventListener('beforeunload', function() {
+    try {
+      var configPath = '/persistent/bzf/2.4/config.cfg';
+      var data = FS.readFile(configPath, { encoding: 'utf8' });
+      localStorage.setItem('bzflag-config', data);
+    } catch(e) {}
+  });
 </script>
 
 {{{ SCRIPT }}}

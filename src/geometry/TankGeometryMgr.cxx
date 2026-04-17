@@ -451,6 +451,14 @@ void TankGeometryUtils::doVertex3f(GLfloat x, GLfloat y, GLfloat z)
 
 void TankGeometryUtils::doNormal3f(GLfloat x, GLfloat y, GLfloat z)
 {
+#ifdef __EMSCRIPTEN__
+    // Under Emscripten, lighting is disabled and normals are called
+    // inconsistently across vertices in the same glBegin/glEnd block
+    // (some vertices have doNormal3f, others don't). This creates
+    // inconsistent attribute stride in the GL emulation. Since lighting
+    // is off, skip normals entirely for consistent stride.
+    return;
+#endif
     if (shadowMode == ShadowOn)
         return;
     const float* scale = currentScaleFactor;
@@ -472,7 +480,15 @@ void TankGeometryUtils::doNormal3f(GLfloat x, GLfloat y, GLfloat z)
 void TankGeometryUtils::doTexCoord2f(GLfloat x, GLfloat y)
 {
     if (shadowMode == ShadowOn)
+    {
+#ifdef __EMSCRIPTEN__
+        // Under Emscripten, always emit texcoords to keep stride consistent.
+        // Every vertex in tank models calls doTexCoord2f, so this ensures
+        // uniform attribute layout even in shadow mode.
+        glTexCoord2f(0.0f, 0.0f);
+#endif
         return;
+    }
     glTexCoord2f(x, y);
     return;
 }

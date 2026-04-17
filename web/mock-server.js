@@ -428,6 +428,7 @@ class MockBZFlagServer {
     this.players = new Map();       // playerId -> PlayerState
     this.nextPlayerId = 0;
     this.worldSize = options.worldSize || 800.0;
+    this._mapBoxes = generateMapBoxes(this.worldSize);
     this.worldData = buildWorldDatabase(this.worldSize);
     this.worldHash = computeWorldHash(this.worldData);
     this.gameType = options.gameType ?? GameType.OpenFFA;
@@ -664,29 +665,33 @@ class MockBZFlagServer {
     if (player.type === PlayerType.Computer) {
       if (this.humanPlayerReady) {
         // Human is ready — broadcast immediately
+        this.log(`Broadcasting MsgAddPlayer for robot ${playerId} "${player.callSign}" immediately (humanPlayerReady=true)`);
         this._broadcastAddPlayer(player);
         this._sendPlayerInfo(playerId, player);
       } else {
         // Queue until human player proves remotePlayers is allocated
-        this.log(`Queuing MsgAddPlayer for robot ${playerId} until human is ready`);
+        this.log(`Queuing MsgAddPlayer for robot ${playerId} "${player.callSign}" until human is ready`);
         this._pendingRobotAddPlayers.push(player);
       }
       return;
     }
 
-    // For human players: the client drives the join protocol after MsgAccept:
-    //   negotiate flags → request settings → request world hash → download world
-    // The client calls enteringServer() when it processes MsgAddPlayer-for-self,
-    // which triggers addRobots(). This requires remotePlayers to be allocated
-    // from the world object, which only happens after the world is downloaded.
+    // For human players: send state dump immediately after MsgAccept.
+    // The client processes messages in order via the event loop. After receiving
+    // MsgAccept, the client sends negotiate flags → settings → world hash → world
+    // download requests. All these are queued and processed before the state dump
+    // messages arrive (since we're sending via setTimeout). By the time the client
+    // processes MsgAddPlayer (from the state dump), the world download will be
+    // complete and remotePlayers will be allocated.
     //
-    // In our async mock server, all messages arrive almost instantly. If we
-    // send MsgAddPlayer here, the client processes it before the world is
-    // downloaded, causing remotePlayers to be NULL → crash.
-    //
-    // Fix: defer the state dump until after the world download completes
-    // (last MsgGetWorld chunk with bytesLeft=0).
-    player._needsStateDump = true;
+    // Previously we deferred the state dump to _handleGetWorld (last chunk), but
+    // with async message delivery, MsgEnter could arrive after the world download
+    // completed, causing the state dump to never be sent.
+    this.log(`Sending state dump for human player ${playerId} immediately after MsgAccept`);
+    this._sendStateDump(playerId);
+
+    // Mark human as ready so robot MsgAddPlayer broadcasts go through immediately
+    this.humanPlayerReady = true;
   }
 
   _handleWantSettings(playerId) {
@@ -742,12 +747,7 @@ class MockBZFlagServer {
     // MsgAddPlayer (which triggers enteringServer → addRobots, requiring
     // remotePlayers to be allocated from the world object).
     if (left === 0) {
-      const player = this.players.get(playerId);
-      if (player && player._needsStateDump) {
-        player._needsStateDump = false;
-        this.log(`Sending deferred state dump for player ${playerId}`);
-        this._sendStateDump(playerId);
-      }
+      this.log(`World download complete for player ${playerId}`);
     }
   }
 
@@ -781,12 +781,34 @@ class MockBZFlagServer {
       this._flushPendingRobots();
     }
 
-    this.log(`_handleAlive for player ${playerId} "${player.callSign}"`);
+    this.log(`_handleAlive for player ${playerId} "${player.callSign}" type=${player.type} entered=${player.entered}`);
+    // Log broadcast recipients
+    const recipients = [];
+    for (const [id, p] of this.players) {
+      if (p.entered) recipients.push(`${id}:${p.callSign}`);
+    }
+    this.log(`_handleAlive: will broadcast to [${recipients.join(', ')}]`);
 
     // Generate a spawn position (random within world bounds)
     const half = this.worldSize / 2 * 0.9;
-    const x = (Math.random() * 2 - 1) * half;
-    const y = (Math.random() * 2 - 1) * half;
+    // Find a spawn position that doesn't overlap with any box
+    let x, y;
+    const boxes = this._mapBoxes || [];
+    const tankRadius = 5.0; // approximate tank half-size
+    for (let attempt = 0; attempt < 50; attempt++) {
+      x = (Math.random() * 2 - 1) * half;
+      y = (Math.random() * 2 - 1) * half;
+      let clear = true;
+      for (const box of boxes) {
+        const dx = Math.abs(x - box.pos[0]);
+        const dy = Math.abs(y - box.pos[1]);
+        if (dx < box.size[0] + tankRadius && dy < box.size[1] + tankRadius) {
+          clear = false;
+          break;
+        }
+      }
+      if (clear) break;
+    }
     const z = 0;
     const azimuth = Math.random() * Math.PI * 2 - Math.PI;
 
@@ -803,7 +825,19 @@ class MockBZFlagServer {
     view.setFloat32(off, y);     off += 4;
     view.setFloat32(off, z);     off += 4;
     view.setFloat32(off, azimuth); off += 4;
-    this._broadcast(Msg.Alive, payload);
+
+    // In BZFlag, the human client reads ALL messages (including robot spawns)
+    // from the human player's connection. Robot connections are only checked
+    // for MsgKilled/MsgShotBegin/MsgShotEnd (see playing.cxx:3569-3572).
+    // Always send MsgAlive to player 0 so the human client can dispatch it.
+    this._sendTo(0, Msg.Alive, payload);
+    // Also send to any other entered players (including the spawning robot's
+    // own connection, though the client discards it)
+    for (const [id, p] of this.players) {
+      if (id === 0) continue; // already sent
+      if (!p.entered) continue;
+      this._sendTo(id, Msg.Alive, payload);
+    }
   }
 
   _handlePlayerUpdate(playerId, code, payload) {
@@ -812,8 +846,23 @@ class MockBZFlagServer {
     if (updPlayer && updPlayer.type === PlayerType.Tank && !this.humanPlayerReady) {
       this._flushPendingRobots();
     }
-    // Relay player position updates to all other players
-    this._broadcast(code, payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength), playerId);
+    const payloadCopy = payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength);
+
+    // In BZFlag, robot position updates must reach the human client (player 0)
+    // so it can render robot tanks. The human client only processes full messages
+    // from its own connection (playing.cxx:3569 discards non-combat msgs from
+    // robot connections). Ensure player 0 always gets position updates.
+    if (playerId !== 0) {
+      // Robot or other player → always send to player 0
+      this._sendTo(0, code, payloadCopy);
+    }
+    // Also relay to all other players (skip sender)
+    for (const [id, p] of this.players) {
+      if (id === playerId) continue;  // skip sender
+      if (id === 0 && playerId !== 0) continue; // already sent to 0
+      if (!p.entered) continue;
+      this._sendTo(id, code, payloadCopy);
+    }
   }
 
   _handleShotBegin(playerId, payload) {
