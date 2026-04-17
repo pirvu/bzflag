@@ -79,6 +79,42 @@
 // invoke incessant rebuilding for build versioning
 #include "version.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+
+// Load config from localStorage into MEMFS before reading
+EM_JS(void, loadConfigFromLocalStorage, (const char* path), {
+    var configPath = UTF8ToString(path);
+    var data = localStorage.getItem('bzflag-config');
+    if (data) {
+        try {
+            // Ensure parent directories exist
+            var parts = configPath.split('/');
+            var dir = "";
+            for (var i = 1; i < parts.length - 1; i++) {
+                dir += '/' + parts[i];
+                try { FS.mkdir(dir); } catch(e) {}
+            }
+            FS.writeFile(configPath, data);
+        } catch(e) {
+            console.warn('Could not restore config from localStorage:', e);
+        }
+    }
+});
+
+// Save config from MEMFS to localStorage after writing
+EM_JS(void, saveConfigToLocalStorage, (const char* path), {
+    var configPath = UTF8ToString(path);
+    try {
+        var data = FS.readFile(configPath, { encoding: 'utf8' });
+        localStorage.setItem('bzflag-config', data);
+        console.log('Config saved to localStorage (' + data.length + ' bytes)');
+    } catch(e) {
+        console.warn('Could not save config to localStorage:', e);
+    }
+});
+#endif
+
 // defaults for bzdb
 #include "defaultBZDB.h"
 
@@ -784,6 +820,13 @@ int         main(int argc, char** argv)
     parseConfigName(argc, argv);
 
     // read resources
+#ifdef __EMSCRIPTEN__
+    // Restore config from localStorage into MEMFS before reading
+    {
+        std::string configPath = getCurrentConfigFileName();
+        loadConfigFromLocalStorage(configPath.c_str());
+    }
+#endif
     if (alternateConfig != "")
     {
         if (CFGMGR.read(alternateConfig))
@@ -1422,6 +1465,14 @@ int         main(int argc, char** argv)
             CFGMGR.write(getCurrentConfigFileName());
         else
             CFGMGR.write(alternateConfig);
+#ifdef __EMSCRIPTEN__
+        // Persist config to localStorage so it survives page reloads
+        {
+            std::string configPath = (alternateConfig == "")
+                ? getCurrentConfigFileName() : alternateConfig;
+            saveConfigToLocalStorage(configPath.c_str());
+        }
+#endif
     }
 
     // shut down
