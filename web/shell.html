@@ -103,10 +103,148 @@
 <!-- Game canvas -->
 <canvas id="canvas" tabindex="0"></canvas>
 
+<!-- Mock BZFlag server for solo mode — must run synchronously before WASM loads -->
+<script src="mock-server.js"></script>
+<script>
+(function() {
+  // mock-server.js uses ES module exports; when loaded as a regular script,
+  // the class is available on the global scope via a small shim at the bottom
+  // of mock-server.js, OR we detect it here.
+  var MockBZFlagServer = window.MockBZFlagServer;
+  if (!MockBZFlagServer) {
+    console.warn('[BZFlag] MockBZFlagServer not found — solo mode will not work');
+    return;
+  }
+
+  var mockServer = new MockBZFlagServer({
+    worldSize: 400.0,
+    gameType: 1, // OpenFFA
+    maxShots: 10,
+    maxPlayers: 20,
+    debug: true,
+  });
+  window.__bzMockServer = mockServer;
+
+  /**
+   * MockWebSocketAdapter — implements the WebSocket API surface that
+   * Emscripten's POSIX-socket-over-WebSocket shim expects, but routes
+   * all traffic through the in-page MockBZFlagServer instead of the network.
+   *
+   * Flow: Emscripten calls connect() → socket shim creates WebSocket →
+   * intercepted here → adapter created → Emscripten sets ws.onopen/onmessage →
+   * adapter fires events → socket layer buffers data for recv() calls
+   */
+  function MockWebSocketAdapter(server) {
+    this.server = server;
+    this.readyState = 0; // CONNECTING
+    this.binaryType = 'arraybuffer';
+    this.onopen = null;
+    this.onmessage = null;
+    this.onclose = null;
+    this.onerror = null;
+    this.bufferedAmount = 0;
+    this.extensions = '';
+    this.protocol = '';
+    this.url = '';
+    // Emscripten's SOCKFS checks these as instance properties (e.g. dest.socket.OPEN)
+    this.CONNECTING = 0;
+    this.OPEN = 1;
+    this.CLOSING = 2;
+    this.CLOSED = 3;
+
+    var self = this;
+    var serverAdapter = {
+      send: function(data) {
+        if (self.readyState !== 1) return;
+        var ab = data instanceof ArrayBuffer ? data : data.buffer || data;
+        if (self.onmessage) {
+          setTimeout(function() { if (self.onmessage) self.onmessage({ data: ab }); }, 0);
+        }
+      },
+      close: function() { self._doClose(); },
+      _handshakePhase: 'waiting_header',
+      _handshakeBuf: new Uint8Array(0),
+      _playerId: -1,
+      _msgBuf: new Uint8Array(0),
+    };
+
+    this._playerId = server.onConnection(serverAdapter);
+
+    // Fire onopen asynchronously (after Emscripten's socket layer sets it)
+    setTimeout(function() {
+      self.readyState = 1; // OPEN
+      if (self.onopen) self.onopen({});
+    }, 0);
+  }
+
+  MockWebSocketAdapter.prototype.send = function(data) {
+    if (this.readyState !== 1) return;
+    var bytes;
+    if (data instanceof ArrayBuffer) {
+      bytes = new Uint8Array(data);
+    } else if (data instanceof Uint8Array) {
+      bytes = data;
+    } else if (ArrayBuffer.isView(data)) {
+      bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    } else {
+      bytes = new TextEncoder().encode(data);
+    }
+    var server = this.server;
+    var playerId = this._playerId;
+    setTimeout(function() { server.onMessage(playerId, bytes); }, 0);
+  };
+
+  MockWebSocketAdapter.prototype.close = function(code, reason) {
+    if (this.readyState >= 2) return;
+    this.readyState = 2;
+    this.server.onDisconnect(this._playerId);
+    this._doClose();
+  };
+
+  MockWebSocketAdapter.prototype._doClose = function() {
+    if (this.readyState === 3) return;
+    this.readyState = 3;
+    var self = this;
+    if (this.onclose) {
+      setTimeout(function() {
+        if (self.onclose) self.onclose({ code: 1000, reason: '', wasClean: true });
+      }, 0);
+    }
+  };
+
+  MockWebSocketAdapter.prototype.addEventListener = function(type, fn) {
+    if (type === 'open') this.onopen = fn;
+    else if (type === 'message') this.onmessage = fn;
+    else if (type === 'close') this.onclose = fn;
+    else if (type === 'error') this.onerror = fn;
+  };
+
+  MockWebSocketAdapter.prototype.removeEventListener = function() {};
+
+  // Intercept WebSocket: route localhost connections to mock server
+  var RealWebSocket = window.WebSocket;
+  window.WebSocket = function(url, protocols) {
+    if (typeof url === 'string' &&
+        (url.indexOf('localhost') !== -1 || url.indexOf('127.0.0.1') !== -1)) {
+      console.log('[BZFlag] Intercepting WebSocket to ' + url + ' -> mock server');
+      var adapter = new MockWebSocketAdapter(mockServer);
+      adapter.url = url;
+      return adapter;
+    }
+    return protocols !== undefined ? new RealWebSocket(url, protocols) : new RealWebSocket(url);
+  };
+  window.WebSocket.CONNECTING = 0;
+  window.WebSocket.OPEN = 1;
+  window.WebSocket.CLOSING = 2;
+  window.WebSocket.CLOSED = 3;
+  window.WebSocket.prototype = RealWebSocket.prototype;
+})();
+</script>
+
 <script>
   var Module = {
     canvas: (function() { return document.getElementById('canvas'); })(),
-    arguments: ['-window', '800x600', '-time', '12:00:00', '-longitude', '0', '-nolist'],
+    arguments: ['-window', '800x600', '-time', '12:00:00', '-longitude', '0', '-nolist', '-solo', '3', 'Player@localhost'],
 
     setStatus: function(text) {
       var progressText = document.getElementById('progress-text');

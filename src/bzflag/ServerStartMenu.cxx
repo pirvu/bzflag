@@ -357,9 +357,13 @@ void ServerStartMenu::dismiss()
 void ServerStartMenu::execute()
 {
 #ifdef __EMSCRIPTEN__
-    // Cannot fork/exec a server process in the browser.
-    // Use an external bzfs + websockify proxy instead.
-    setStatus("Cannot start server in browser. Connect to an external server.");
+    // In browser mode, use the in-page JS mock server instead of fork/exec.
+    {
+        StartupInfo* info = getStartupInfo();
+        strcpy(info->serverName, "localhost");
+        info->serverPort = 5154;
+        setStatus("Starting mock server...");
+    }
     return;
 #endif
 

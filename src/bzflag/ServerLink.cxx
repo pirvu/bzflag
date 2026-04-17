@@ -570,6 +570,12 @@ int ServerLink::fillTcpReadBuffer(int blockTime)
 
     if (blockTime)
     {
+#if defined(__EMSCRIPTEN__)
+        // On Emscripten, select() with NULL timeout blocks the main thread
+        // indefinitely without yielding to the browser event loop. Use
+        // emscripten_sleep() to yield so WebSocket messages can arrive.
+        emscripten_sleep(50);
+#else
         // block for specified period.  default is no blocking (polling)
         struct timeval timeout;
         timeout.tv_sec = blockTime / 1000;
@@ -583,6 +589,7 @@ int ServerLink::fillTcpReadBuffer(int blockTime)
                             blockTime > 0 ? &timeout : NULL);
         if (nfound < 0)
             return -1;
+#endif
     }
 
     int rlen = recv(fd, &tbuf[tcpBufferPos], emptySpace, 0);
