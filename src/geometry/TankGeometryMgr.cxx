@@ -181,6 +181,12 @@ void TankGeometryMgr::deleteLists()
 
 void TankGeometryMgr::buildLists()
 {
+#ifdef __EMSCRIPTEN__
+    // Tank geometry uses mixed texcoord/non-texcoord vertices in glBegin/glEnd
+    // blocks which crashes Emscripten's GL emulation stride calculation.
+    // Skip building tank geometry for now — tanks will be invisible.
+    return;
+#endif
     // setup the tread style
     setTreadStyle(BZDB.evalInt("treadStyle"));
 

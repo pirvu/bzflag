@@ -182,6 +182,10 @@ GLint gluProject(GLdouble objX, GLdouble objY, GLdouble objZ,
     return GL_TRUE;
 }
 
+// Texture generation — not supported in Emscripten GL emulation
+void glTexGeni(GLenum /*coord*/, GLenum /*pname*/, GLint /*param*/) {}
+void glTexGenfv(GLenum /*coord*/, GLenum /*pname*/, const GLfloat* /*params*/) {}
+
 } // extern "C"
 
 #endif // __EMSCRIPTEN__

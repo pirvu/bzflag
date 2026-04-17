@@ -29,59 +29,17 @@
     z-index: 10;
   }
 
-  #loading h1 {
-    font-size: 2rem;
-    margin-bottom: 1.5rem;
-    color: #ffffff;
-  }
+  #loading h1 { font-size: 2rem; margin-bottom: 1.5rem; color: #ffffff; }
 
   #progress-container {
-    width: 320px;
-    height: 8px;
-    background: #2a2a4a;
-    border-radius: 4px;
-    overflow: hidden;
+    width: 320px; height: 8px; background: #2a2a4a; border-radius: 4px; overflow: hidden;
   }
 
   #progress-bar {
-    width: 0%;
-    height: 100%;
-    background: #4a9eff;
-    border-radius: 4px;
-    transition: width 0.2s ease;
+    width: 0%; height: 100%; background: #4a9eff; border-radius: 4px; transition: width 0.2s ease;
   }
 
-  #progress-text {
-    margin-top: 0.75rem;
-    font-size: 0.875rem;
-    color: #999;
-  }
-
-  #play-overlay {
-    position: fixed;
-    inset: 0;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    background: rgba(26, 26, 46, 0.85);
-    z-index: 20;
-    cursor: pointer;
-  }
-
-  #play-button {
-    padding: 1rem 2.5rem;
-    font-size: 1.25rem;
-    font-family: inherit;
-    color: #ffffff;
-    background: #4a9eff;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.15s ease;
-  }
-
-  #play-button:hover { background: #3a8eef; }
-  #play-button:active { background: #2a7edf; }
+  #progress-text { margin-top: 0.75rem; font-size: 0.875rem; color: #999; }
 </style>
 </head>
 <body>
@@ -89,68 +47,32 @@
 <!-- Loading screen -->
 <div id="loading">
   <h1>BZFlag</h1>
-  <div id="progress-container">
-    <div id="progress-bar"></div>
-  </div>
+  <div id="progress-container"><div id="progress-bar"></div></div>
   <div id="progress-text">Loading...</div>
-</div>
-
-<!-- Click-to-play overlay (for audio autoplay policy) -->
-<div id="play-overlay">
-  <button id="play-button">Click to Play</button>
 </div>
 
 <!-- Game canvas -->
 <canvas id="canvas" tabindex="0"></canvas>
 
-<!-- Mock BZFlag server for solo mode — must run synchronously before WASM loads -->
+<!-- Mock BZFlag server for solo mode -->
 <script src="mock-server.js"></script>
 <script>
 (function() {
-  // mock-server.js uses ES module exports; when loaded as a regular script,
-  // the class is available on the global scope via a small shim at the bottom
-  // of mock-server.js, OR we detect it here.
   var MockBZFlagServer = window.MockBZFlagServer;
-  if (!MockBZFlagServer) {
-    console.warn('[BZFlag] MockBZFlagServer not found — solo mode will not work');
-    return;
-  }
+  if (!MockBZFlagServer) return;
 
   var mockServer = new MockBZFlagServer({
-    worldSize: 400.0,
-    gameType: 1, // OpenFFA
-    maxShots: 10,
-    maxPlayers: 20,
-    debug: true,
+    worldSize: 400.0, gameType: 1, maxShots: 10, maxPlayers: 20, debug: true,
   });
   window.__bzMockServer = mockServer;
 
-  /**
-   * MockWebSocketAdapter — implements the WebSocket API surface that
-   * Emscripten's POSIX-socket-over-WebSocket shim expects, but routes
-   * all traffic through the in-page MockBZFlagServer instead of the network.
-   *
-   * Flow: Emscripten calls connect() → socket shim creates WebSocket →
-   * intercepted here → adapter created → Emscripten sets ws.onopen/onmessage →
-   * adapter fires events → socket layer buffers data for recv() calls
-   */
   function MockWebSocketAdapter(server) {
     this.server = server;
-    this.readyState = 0; // CONNECTING
+    this.readyState = 0;
     this.binaryType = 'arraybuffer';
-    this.onopen = null;
-    this.onmessage = null;
-    this.onclose = null;
-    this.onerror = null;
-    this.bufferedAmount = 0;
-    this.extensions = '';
-    this.protocol = '';
-    this.url = '';
-    // Emscripten's SOCKFS checks these as instance properties (e.g. dest.socket.OPEN)
-    this.CONNECTING = 0;
-    this.OPEN = 1;
-    this.CLOSING = 2;
-    this.CLOSED = 3;
+    this.onopen = null; this.onmessage = null; this.onclose = null; this.onerror = null;
+    this.bufferedAmount = 0; this.extensions = ''; this.protocol = ''; this.url = '';
+    this.CONNECTING = 0; this.OPEN = 1; this.CLOSING = 2; this.CLOSED = 3;
 
     var self = this;
     var serverAdapter = {
@@ -169,63 +91,39 @@
     };
 
     this._playerId = server.onConnection(serverAdapter);
-
-    // Fire onopen asynchronously (after Emscripten's socket layer sets it)
-    setTimeout(function() {
-      self.readyState = 1; // OPEN
-      if (self.onopen) self.onopen({});
-    }, 0);
+    setTimeout(function() { self.readyState = 1; if (self.onopen) self.onopen({}); }, 0);
   }
 
   MockWebSocketAdapter.prototype.send = function(data) {
     if (this.readyState !== 1) return;
     var bytes;
-    if (data instanceof ArrayBuffer) {
-      bytes = new Uint8Array(data);
-    } else if (data instanceof Uint8Array) {
-      bytes = data;
-    } else if (ArrayBuffer.isView(data)) {
-      bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-    } else {
-      bytes = new TextEncoder().encode(data);
-    }
-    var server = this.server;
-    var playerId = this._playerId;
+    if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+    else if (data instanceof Uint8Array) bytes = data;
+    else if (ArrayBuffer.isView(data)) bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    else bytes = new TextEncoder().encode(data);
+    var server = this.server; var playerId = this._playerId;
     setTimeout(function() { server.onMessage(playerId, bytes); }, 0);
   };
-
-  MockWebSocketAdapter.prototype.close = function(code, reason) {
+  MockWebSocketAdapter.prototype.close = function() {
     if (this.readyState >= 2) return;
-    this.readyState = 2;
-    this.server.onDisconnect(this._playerId);
-    this._doClose();
+    this.readyState = 2; this.server.onDisconnect(this._playerId); this._doClose();
   };
-
   MockWebSocketAdapter.prototype._doClose = function() {
-    if (this.readyState === 3) return;
-    this.readyState = 3;
+    if (this.readyState === 3) return; this.readyState = 3;
     var self = this;
-    if (this.onclose) {
-      setTimeout(function() {
-        if (self.onclose) self.onclose({ code: 1000, reason: '', wasClean: true });
-      }, 0);
-    }
+    if (this.onclose) setTimeout(function() { if (self.onclose) self.onclose({ code: 1000, reason: '', wasClean: true }); }, 0);
   };
-
   MockWebSocketAdapter.prototype.addEventListener = function(type, fn) {
     if (type === 'open') this.onopen = fn;
     else if (type === 'message') this.onmessage = fn;
     else if (type === 'close') this.onclose = fn;
     else if (type === 'error') this.onerror = fn;
   };
-
   MockWebSocketAdapter.prototype.removeEventListener = function() {};
 
-  // Intercept WebSocket: route localhost connections to mock server
   var RealWebSocket = window.WebSocket;
   window.WebSocket = function(url, protocols) {
-    if (typeof url === 'string' &&
-        (url.indexOf('localhost') !== -1 || url.indexOf('127.0.0.1') !== -1)) {
+    if (typeof url === 'string' && (url.indexOf('localhost') !== -1 || url.indexOf('127.0.0.1') !== -1)) {
       console.log('[BZFlag] Intercepting WebSocket to ' + url + ' -> mock server');
       var adapter = new MockWebSocketAdapter(mockServer);
       adapter.url = url;
@@ -233,10 +131,8 @@
     }
     return protocols !== undefined ? new RealWebSocket(url, protocols) : new RealWebSocket(url);
   };
-  window.WebSocket.CONNECTING = 0;
-  window.WebSocket.OPEN = 1;
-  window.WebSocket.CLOSING = 2;
-  window.WebSocket.CLOSED = 3;
+  window.WebSocket.CONNECTING = 0; window.WebSocket.OPEN = 1;
+  window.WebSocket.CLOSING = 2; window.WebSocket.CLOSED = 3;
   window.WebSocket.prototype = RealWebSocket.prototype;
 })();
 </script>
@@ -244,83 +140,28 @@
 <script>
   var Module = {
     canvas: (function() { return document.getElementById('canvas'); })(),
-    arguments: ['-window', '800x600', '-time', '12:00:00', '-longitude', '0', '-nolist', '-solo', '3', 'Player@localhost'],
+    arguments: ['-window', '800x600', '-time', '12:00:00', '-longitude', '0', '-nolist', '-mute', 'Player@localhost'],
 
     setStatus: function(text) {
-      var progressText = document.getElementById('progress-text');
-      var progressBar = document.getElementById('progress-bar');
-      if (!text) {
-        // Loading complete — show play overlay
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('play-overlay').style.display = 'flex';
-        return;
-      }
-      progressText.textContent = text;
-      // Parse "Downloading data... (X/Y)" format
-      var match = text.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+)/);
-      if (match) {
-        var loaded = parseInt(match[1]);
-        var total = parseInt(match[2]);
-        if (total > 0) {
-          progressBar.style.width = ((loaded / total) * 100) + '%';
-        }
-      }
+      var el = document.getElementById('loading');
+      var bar = document.getElementById('progress-bar');
+      var txt = document.getElementById('progress-text');
+      if (!text) { el.style.display = 'none'; document.getElementById('canvas').focus(); return; }
+      txt.textContent = text;
+      var m = text.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+)/);
+      if (m && parseInt(m[2]) > 0) bar.style.width = ((parseInt(m[1]) / parseInt(m[2])) * 100) + '%';
     },
 
-    onRuntimeInitialized: function() {
-      // Runtime ready — loading screen will be hidden by setStatus('')
-    },
-
-    print: function(text) {
-      if (typeof console !== 'undefined') console.log(text);
-    },
-
-    printErr: function(text) {
-      if (typeof console !== 'undefined') console.warn(text);
-    }
+    print: function(text) { console.log(text); },
+    printErr: function(text) { console.warn(text); }
   };
 
-  // Click-to-play: resume AudioContext and start the game
+  // Canvas focus and context menu
   (function() {
-    var overlay = document.getElementById('play-overlay');
-    var playBtn = document.getElementById('play-button');
-    var canvas = document.getElementById('canvas');
-    var audioResumed = false;
-
-    function resumeAudio() {
-      if (audioResumed) return;
-      audioResumed = true;
-      // Resume any AudioContext created by SDL or Emscripten
-      if (typeof Module !== 'undefined' && Module.SDL && Module.SDL.audioContext) {
-        Module.SDL.audioContext.resume();
-      }
-      // Also try the global Emscripten audio context
-      if (typeof SDL !== 'undefined' && SDL.audioContext) {
-        SDL.audioContext.resume();
-      }
-    }
-
-    function startGame() {
-      resumeAudio();
-      overlay.style.display = 'none';
-      canvas.focus();
-    }
-
-    playBtn.addEventListener('click', startGame);
-    overlay.addEventListener('click', function(e) {
-      if (e.target === overlay) startGame();
-    });
-
-    // Also resume audio on first user interaction with the canvas
-    canvas.addEventListener('click', resumeAudio, { once: true });
-    canvas.addEventListener('keydown', resumeAudio, { once: true });
-  })();
-
-  // Set fixed canvas resolution
-  (function() {
-    var canvas = document.getElementById('canvas');
-    canvas.width = 800;
-    canvas.height = 600;
+    var c = document.getElementById('canvas');
+    c.width = 800; c.height = 600;
+    c.addEventListener('click', function() { c.focus(); });
+    c.addEventListener('contextmenu', function(e) { e.preventDefault(); });
   })();
 </script>
 
