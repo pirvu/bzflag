@@ -389,9 +389,38 @@ void OpenGLTexture::getBestFormat()
     }
 
     // pick internal format
+#ifdef __EMSCRIPTEN__
+    // WebGL 2 core profile doesn't support GL_LUMINANCE / GL_LUMINANCE_ALPHA.
+    // Expand luminance data back to RGB/RGBA so we can use standard formats.
+    if (useLuminance)
+    {
+        // Re-expand: luminance data was packed to 1 byte per pixel.
+        // We need to expand it back to RGB(A).
+        const int size = scaledWidth * scaledHeight;
+        const int dstBpp = alpha ? 4 : 3;
+        GLubyte* expanded = new GLubyte[size * dstBpp];
+        GLubyte* src = image;
+        GLubyte* dst = expanded;
+        for (int j = 0; j < size; j++)
+        {
+            GLubyte lum = *src++;
+            *dst++ = lum;
+            *dst++ = lum;
+            *dst++ = lum;
+            if (alpha)
+                *dst++ = *src++;
+        }
+        // Copy expanded data back to image buffer
+        memcpy(image, expanded, size * dstBpp);
+        delete[] expanded;
+        useLuminance = false; // now using RGB/RGBA
+    }
+    internalFormat = alpha ? GL_RGBA : GL_RGB;
+#else
     internalFormat = useLuminance ?
                      (alpha ? GL_LUMINANCE_ALPHA : GL_LUMINANCE) :
                      (alpha ? GL_RGBA : GL_RGB);
+#endif
 }
 
 

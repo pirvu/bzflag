@@ -1190,7 +1190,9 @@ int         main(int argc, char** argv)
     glLoadIdentity();
     glEnable(GL_SCISSOR_TEST);
 //  glEnable(GL_CULL_FACE);
+#ifndef __EMSCRIPTEN__
     glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
+#endif
     if (!OpenGLGState::haveGLContext())
     {
         // DIE
@@ -1307,6 +1309,12 @@ int         main(int argc, char** argv)
         tm.setMaxFilter(BZDB.get("texture"));
         BZDB.set("texture", tm.getMaxFilterName());
 
+#ifdef __EMSCRIPTEN__
+        // Emscripten's legacy GL emulation does not support lighting;
+        // force it off so vertex colors pass through correctly.
+        BZDB.set("lighting", "0");
+        BZDB.setPersistent("lighting", false);
+#endif
         BZDB.set("texturereplace", (!BZDBCache::lighting &&
                                     RENDERER.useQuality() < 2) ? "1" : "0");
         BZDB.setPersistent("texturereplace", false);

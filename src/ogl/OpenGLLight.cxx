@@ -285,6 +285,9 @@ void OpenGLLight::execute(int index, bool useList) const
 
     // setup the light parameters (buffered in
     // a display list), but do not turn it on.
+#ifdef __EMSCRIPTEN__
+    genLight((GLenum)(GL_LIGHT0 + index));
+#else
     if (lists[index] != INVALID_GL_LIST_ID)
         glCallList(lists[index]);
     else
@@ -294,6 +297,7 @@ void OpenGLLight::execute(int index, bool useList) const
         genLight((GLenum)(GL_LIGHT0 + index));
         glEndList();
     }
+#endif
     return;
 }
 
@@ -331,7 +335,13 @@ void OpenGLLight::freeLists()
 GLint OpenGLLight::getMaxLights()
 {
     if (maxLights == 0)
+    {
+#ifndef __EMSCRIPTEN__
         glGetIntegerv(GL_MAX_LIGHTS, &maxLights);
+#else
+        maxLights = 8;
+#endif
+    }
     return maxLights;
 }
 

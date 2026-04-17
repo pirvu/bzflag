@@ -139,7 +139,11 @@ void SceneRenderer::setWindow(MainWindow* _window)
 #ifndef __EMSCRIPTEN__
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);
 #endif
+#ifndef __EMSCRIPTEN__
     glGetIntegerv(GL_MAX_LIGHTS, &maxLights);
+#else
+    maxLights = 8;
+#endif
     reservedLights = 1;           // only one light between sun and moon
     maxLights -= reservedLights;      // can't use the reserved lights
 
@@ -225,6 +229,7 @@ void SceneRenderer::setQuality(int value)
 
     notifyStyleChange();
 
+#ifndef __EMSCRIPTEN__
     if (useQualityValue >= 1)
     {
         glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
@@ -239,6 +244,7 @@ void SceneRenderer::setQuality(int value)
         glHint(GL_POINT_SMOOTH_HINT, GL_FASTEST);
         glHint(GL_POLYGON_SMOOTH_HINT, GL_FASTEST);
     }
+#endif
 
     if (useQualityValue >= 2)
         TankSceneNode::setMaxLOD(-1);
@@ -951,8 +957,10 @@ void SceneRenderer::renderScene(bool UNUSED(_lastFrame), bool UNUSED(_sameFrame)
     // draw start of background (no depth testing)
     OpenGLGState::resetState();
 
+#ifndef __EMSCRIPTEN__
     const GLdouble plane[4] = {0.0, 0.0, +1.0, 0.0};
     glClipPlane(GL_CLIP_PLANE0, plane);
+#endif
 
     if (background)
     {
@@ -1105,7 +1113,9 @@ static bool setupMapFog()
     if (BZDB.get(StateDatabase::BZDB_FOGMODE) == "none")
     {
         glDisable(GL_FOG);
+#ifndef __EMSCRIPTEN__
         glHint(GL_FOG_HINT, GL_FASTEST);
+#endif
         return false;
     }
     RENDERER.setFogActive(true);
@@ -1133,10 +1143,12 @@ static bool setupMapFog()
         fogColor[0] = fogColor[1] = fogColor[2] = 0.1f;
         fogColor[3] = 0.0f; // has no effect
     }
+#ifndef __EMSCRIPTEN__
     if (BZDB.evalInt("fogEffect") >= 1)
         glHint(GL_FOG_HINT, GL_NICEST);
     else
         glHint(GL_FOG_HINT, GL_FASTEST);
+#endif
 
     // setup GL fog
     glFogi(GL_FOG_MODE, fogMode);

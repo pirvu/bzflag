@@ -105,6 +105,9 @@ void            OpenGLMaterial::Rep::unref()
 
 void            OpenGLMaterial::Rep::execute()
 {
+#ifdef __EMSCRIPTEN__
+    // no-op under Emscripten: most material pnames cause TODO errors in GL emulation
+#else
     if (list != INVALID_GL_LIST_ID)
         glCallList(list);
     else
@@ -112,29 +115,26 @@ void            OpenGLMaterial::Rep::execute()
         list = glGenLists(1);
         glNewList(list, GL_COMPILE_AND_EXECUTE);
         {
-#ifndef __EMSCRIPTEN__
             glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, specular);
             glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, emissive);
             glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shininess);
-#endif
             if (RENDERER.useQuality() > 0)
             {
                 if  ((specular[0] > 0.0f) ||
                         (specular[1] > 0.0f) ||
                         (specular[2] > 0.0f))
                 {
-                    // accurate specular highlighting  (more GPU intensive)
                     glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
                 }
                 else
                 {
-                    // speed up the lighting calcs by simplifying
                     glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_FALSE);
                 }
             }
         }
         glEndList();
     }
+#endif
     return;
 }
 

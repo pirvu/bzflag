@@ -17,6 +17,7 @@
 #ifdef __EMSCRIPTEN__
 
 #include "bzfgl.h"
+#include <vector>
 
 // bzfgl.h rewrites some GL calls via macros (glDeleteLists -> bzDeleteLists, etc.).
 // Undo those macros so we can define the real GL entry points here.
@@ -54,9 +55,47 @@ void glDeleteLists(GLuint /*list*/, GLsizei /*range*/) {}
 GLboolean glIsList(GLuint /*list*/) { return GL_FALSE; }
 void glListBase(GLuint /*base*/) {}
 
-// Attribute stack — not in WebGL. No-op.
-void glPushAttrib(GLbitfield /*mask*/) {}
-void glPopAttrib() {}
+// Attribute stack — see attrib implementation below extern "C" block.
+} // end extern "C" for display lists
+
+// Scissor-state save/restore for glPushAttrib/glPopAttrib.
+// BZFlag frequently does:
+//   glPushAttrib(GL_SCISSOR_BIT); glScissor(...); ... glPopAttrib();
+// Without save/restore, the scissor leaks across draw calls and causes
+// glClear to only affect a small region, producing severe ghosting artifacts.
+struct AttribState {
+    GLbitfield mask;
+    GLint scissorBox[4];
+    GLboolean scissorEnabled;
+};
+static std::vector<AttribState> sAttribStack;
+
+extern "C" {
+
+void glPushAttrib(GLbitfield mask) {
+    AttribState st;
+    st.mask = mask;
+    if (mask & GL_SCISSOR_BIT) {
+        glGetIntegerv(GL_SCISSOR_BOX, st.scissorBox);
+        st.scissorEnabled = glIsEnabled(GL_SCISSOR_TEST);
+    }
+    sAttribStack.push_back(st);
+}
+
+void glPopAttrib() {
+    if (sAttribStack.empty()) return;
+    AttribState st = sAttribStack.back();
+    sAttribStack.pop_back();
+    if (st.mask & GL_SCISSOR_BIT) {
+        glScissor(st.scissorBox[0], st.scissorBox[1],
+                  st.scissorBox[2], st.scissorBox[3]);
+        if (st.scissorEnabled)
+            glEnable(GL_SCISSOR_TEST);
+        else
+            glDisable(GL_SCISSOR_TEST);
+    }
+}
+
 void glPushClientAttrib(GLbitfield /*mask*/) {}
 void glPopClientAttrib() {}
 
