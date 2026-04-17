@@ -356,6 +356,13 @@ void ServerStartMenu::dismiss()
 
 void ServerStartMenu::execute()
 {
+#ifdef __EMSCRIPTEN__
+    // Cannot fork/exec a server process in the browser.
+    // Use an external bzfs + websockify proxy instead.
+    setStatus("Cannot start server in browser. Connect to an external server.");
+    return;
+#endif
+
     static const char*    serverApp = "bzfs";
     bool success = false;
 

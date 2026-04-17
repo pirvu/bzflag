@@ -28,6 +28,9 @@
 #include <unistd.h>
 #include <errno.h>
 #endif
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -138,7 +141,28 @@ ServerLink::ServerLink(const Address& serverAddress, int port) :
     fd_set read_set;
     int nfound;
 
-#if !defined(_WIN32)
+#if defined(__EMSCRIPTEN__)
+    // Emscripten's socket emulation maps TCP connect() onto a WebSocket.
+    // connect() returns 0 immediately (optimistically) before the WS
+    // handshake completes. We must yield to the browser event loop so
+    // the WebSocket can finish its handshake before we send/recv.
+    okay = true;
+    fdMax = query;
+    logDebugMessage(2, "CONNECT: Emscripten connect to %s:%d (fd=%d)\n",
+                    inet_ntoa(addr.sin_addr), port, query);
+    {
+        int cr = connect(query, (CNCTType*)&addr, sizeof(addr));
+        if (cr < 0)
+        {
+            logDebugMessage(1, "CONNECT: connect failed (errno=%d)\n", errno);
+            close(query);
+            return;
+        }
+    }
+    // Yield to the browser event loop so the WebSocket handshake completes.
+    // ASYNCIFY makes emscripten_sleep() yield control back to the browser.
+    emscripten_sleep(500);
+#elif !defined(_WIN32)
     okay = true;
     fdMax = query;
     if (BzfNetwork::setNonBlocking(query) < 0)
@@ -210,6 +234,52 @@ ServerLink::ServerLink(const Address& serverAddress, int port) :
 
     logDebugMessage(2,"CONNECT:send in connect returned %d\n",sendRepply);
 
+#ifdef __EMSCRIPTEN__
+    // Emscripten: select() doesn't yield to the browser event loop,
+    // so we poll with emscripten_sleep() to let WebSocket I/O proceed.
+    {
+        bool gotNetData = false;
+        int loopCount = 0;
+        double thisStartTime = TimeKeeper::getCurrent().getSeconds();
+        double connectTimeout = 15.0;
+
+        while (!gotNetData)
+        {
+            loopCount++;
+            // Yield to event loop so WebSocket frames can arrive
+            emscripten_sleep(100);
+
+            i = recv(query, (char*)version, 8, MSG_DONTWAIT);
+
+            if (i > 0)
+            {
+                logDebugMessage(2,"CONNECT:got %d bytes from server\n",i);
+                gotNetData = true;
+            }
+            else if (i == 0)
+            {
+                logDebugMessage(1,"CONNECT:connection closed by server\n");
+                close(query);
+                return;
+            }
+            else
+            {
+                if (errno != EAGAIN && errno != EWOULDBLOCK && errno != 0)
+                {
+                    logDebugMessage(1,"CONNECT:recv error %d\n",errno);
+                    close(query);
+                    return;
+                }
+                if ((TimeKeeper::getCurrent().getSeconds() - thisStartTime) > connectTimeout)
+                {
+                    logDebugMessage(1,"CONNECT:timeout after %d loops\n",loopCount);
+                    close(query);
+                    return;
+                }
+            }
+        }
+    }
+#else
     // wait to get data back. we are still blocking so these
     // calls should be sync.
 
@@ -271,6 +341,7 @@ ServerLink::ServerLink(const Address& serverAddress, int port) :
     }
 
     logDebugMessage(2,"CONNECT:connect loop count = %d\n",loopCount);
+#endif
 
     // if we got back less than the expected connect response (BZFSXXXX)
     // then something went bad, and we are done.
