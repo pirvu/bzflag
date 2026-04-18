@@ -1,10 +1,8 @@
-name: Build Emscripten Web Version
+name: Build Docker Web Image
 
 on:
   push:
     branches: [emscripten-browser-port]
-  pull_request:
-    branches: [2.4]
   workflow_dispatch:
 
 env:
@@ -12,60 +10,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}-web
 
 jobs:
-  build-web:
-    runs-on: ubuntu-latest
-    container:
-      image: emscripten/emsdk:3.1.74
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure CMake
-        run: |
-          mkdir -p build-emscripten
-          cd build-emscripten
-          emcmake cmake .. \
-            -DENABLE_CLIENT=ON \
-            -DENABLE_SERVER=OFF \
-            -DENABLE_BZADMIN=OFF
-
-      - name: Build
-        run: |
-          cd build-emscripten
-          emmake make -j$(nproc)
-
-      - name: Copy web assets
-        run: |
-          cp web/mock-server.js build-emscripten/src/bzflag/
-
-      - name: Upload web artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: bzflag-web
-          path: |
-            build-emscripten/src/bzflag/bzflag.html
-            build-emscripten/src/bzflag/bzflag.js
-            build-emscripten/src/bzflag/bzflag.wasm
-            build-emscripten/src/bzflag/bzflag.data
-            build-emscripten/src/bzflag/mock-server.js
-          retention-days: 30
-
-      - name: Build summary
-        run: |
-          echo "## BZFlag Web Build" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          ls -lh build-emscripten/src/bzflag/bzflag.{html,js,wasm,data} | awk '{print "- " $NF ": " $5}' >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Run with Docker" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "docker run -p 8080:80 ghcr.io/${{ github.repository }}-web:latest" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "Open http://localhost:8080" >> $GITHUB_STEP_SUMMARY
-
   docker-image:
-    needs: build-web
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -106,32 +51,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy-pages:
-    needs: build-web
-    if: github.ref == 'refs/heads/emscripten-browser-port' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: bzflag-web
-          path: site
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-
-      - name: Upload to Pages
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-
-      - name: Deploy to Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Build summary
+        run: |
+          echo "## BZFlag Web Docker Image" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Image pushed to \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Run" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "docker run -p 8080:80 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "Open http://localhost:8080" >> $GITHUB_STEP_SUMMARY

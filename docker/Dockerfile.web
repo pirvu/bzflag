@@ -36,7 +36,8 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # WASM MIME type
+    # Include standard MIME types + WASM
+    include /etc/nginx/mime.types;
     types {
         application/wasm wasm;
     }
