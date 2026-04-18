@@ -7,6 +7,10 @@ on:
     branches: [2.4]
   workflow_dispatch:
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}-web
+
 jobs:
   build-web:
     runs-on: ubuntu-latest
@@ -53,11 +57,54 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           ls -lh build-emscripten/src/bzflag/bzflag.{html,js,wasm,data} | awk '{print "- " $NF ": " $5}' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Download the **bzflag-web** artifact, extract, and serve with:" >> $GITHUB_STEP_SUMMARY
+          echo "### Run with Docker" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "python3 -m http.server 8080" >> $GITHUB_STEP_SUMMARY
+          echo "docker run -p 8080:80 ghcr.io/${{ github.repository }}-web:latest" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "Then open http://localhost:8080/bzflag.html" >> $GITHUB_STEP_SUMMARY
+          echo "Open http://localhost:8080" >> $GITHUB_STEP_SUMMARY
+
+  docker-image:
+    needs: build-web
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.web
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy-pages:
     needs: build-web
