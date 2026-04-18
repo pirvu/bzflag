@@ -434,7 +434,7 @@ class MockBZFlagServer {
     this.gameType = options.gameType ?? GameType.OpenFFA;
     this.maxShots = options.maxShots || 10;
     this.maxPlayers = options.maxPlayers || 20;
-    this.gameOptions = 0x0008 | 0x0020;  // JumpingGameStyle | RicochetGameStyle
+    this.gameOptions = 0x0008;  // JumpingGameStyle only (ricochet disabled — causes self-kill bug)
     this.teamScores = [];
     for (let i = 0; i < CtfTeams; i++) {
       this.teamScores.push({ size: 0, wins: 0, losses: 0 });
@@ -876,30 +876,35 @@ class MockBZFlagServer {
   }
 
   _handleKilled(playerId, payload) {
-    const player = this.players.get(playerId);
-    if (!player) return;
-    player.isAlive = false;
+    // MsgKilled payload from client: u8 killerId, u16 reason, u16 shotId, flag...
+    // The VICTIM is the sender (playerId), NOT in the payload!
+    // The server must prepend the victim ID when broadcasting.
+    if (payload.length < 1) return;
+    const pView = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+    const killerId = pView.getUint8(0);
+    const victimId = playerId;
 
-    // Update scores
-    player.losses++;
-
-    // Parse killer ID from payload: u8 killerId, i16 reason, i16 shotId, ...
-    if (payload.length >= 1) {
-      const killerView = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
-      const killerId = killerView.getUint8(0);
-      const killer = this.players.get(killerId);
-      if (killer && killerId !== playerId) {
-        killer.wins++;
-        // Send score update for killer
-        this._sendScoreUpdate(killer);
-      }
+    const victim = this.players.get(victimId);
+    if (victim) {
+      victim.isAlive = false;
+      victim.losses++;
+      this._sendScoreUpdate(victim);
     }
 
-    // Send score update for victim
-    this._sendScoreUpdate(player);
+    const killer = this.players.get(killerId);
+    if (killer && killerId !== victimId) {
+      killer.wins++;
+      this._sendScoreUpdate(killer);
+    }
 
-    // Broadcast the kill
-    this._broadcast(Msg.Killed, payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength));
+    this.log(`Kill: player ${killerId} killed player ${victimId}`);
+
+    // Broadcast format: u8 victimId + original payload (u8 killerId, u16 reason, ...)
+    const rawPayload = payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength);
+    const broadcastPayload = new ArrayBuffer(1 + rawPayload.byteLength);
+    new Uint8Array(broadcastPayload)[0] = victimId;
+    new Uint8Array(broadcastPayload).set(new Uint8Array(rawPayload), 1);
+    this._broadcast(Msg.Killed, broadcastPayload, playerId);
   }
 
   _handleGrabFlag(playerId, payload) {
