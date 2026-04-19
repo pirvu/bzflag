@@ -4,8 +4,8 @@
 message(STATUS "Configuring for Emscripten/WebAssembly build")
 
 # Emscripten provides SDL2 and zlib as ports
-add_compile_options(-sUSE_SDL=2 -sUSE_ZLIB=1)
-add_link_options(-sUSE_SDL=2 -sUSE_ZLIB=1)
+add_compile_options(-Oz -sUSE_SDL=2 -sUSE_ZLIB=1)
+add_link_options(-Oz -sUSE_SDL=2 -sUSE_ZLIB=1)
 
 # Server and bzadmin are not supported under Emscripten
 set(ENABLE_SERVER OFF CACHE BOOL "Server disabled for Emscripten" FORCE)

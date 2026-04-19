@@ -192,7 +192,7 @@ function buildUncompressedWorldData(worldSize) {
         view.setFloat32(off, wall.angle);     off += 4;
         view.setFloat32(off, wall.breadth);   off += 4;
         view.setFloat32(off, wall.height);    off += 4;
-        view.setUint8(off, 0); off += 1;     // stateByte: no ricochet on walls
+        view.setUint8(off, 0x08); off += 1;     // stateByte: _RICOCHET
       }
     } else if (i === 1) { // boxType
       view.setUint32(off, boxes.length); off += 4;
@@ -205,7 +205,7 @@ function buildUncompressedWorldData(worldSize) {
         view.setFloat32(off, box.size[0]); off += 4;
         view.setFloat32(off, box.size[1]); off += 4;
         view.setFloat32(off, box.size[2]); off += 4;
-        view.setUint8(off, 0); off += 1;  // stateByte: no driveThrough/shootThrough
+        view.setUint8(off, 0x08); off += 1;  // stateByte: _RICOCHET
       }
     } else {
       view.setUint32(off, 0); off += 4;
@@ -434,7 +434,7 @@ class MockBZFlagServer {
     this.gameType = options.gameType ?? GameType.OpenFFA;
     this.maxShots = options.maxShots || 10;
     this.maxPlayers = options.maxPlayers || 20;
-    this.gameOptions = 0x0008;  // JumpingGameStyle only (ricochet disabled — causes self-kill bug)
+    this.gameOptions = 0x0008 | 0x0020;  // JumpingGameStyle | RicochetGameStyle
     this.teamScores = [];
     for (let i = 0; i < CtfTeams; i++) {
       this.teamScores.push({ size: 0, wins: 0, losses: 0 });

@@ -104,19 +104,18 @@ Push to `emscripten-browser-port` branch triggers:
 ## Phase 2 — Next steps
 
 ### High priority
-1. **Robot AI movement** — Robots spawn but don't move. Client-side RobotPlayer AI runs but position updates need proper relay through mock server
+1. ~~**Robot AI movement**~~ — ✅ Working
 2. **Ricochet** — Re-enable with proper shot-obstacle collision
-3. **Audio** — Remove -mute flag, handle autoplay policy
-4. **Ground texture** — Fix ground level alignment
+3. **Real server multiplayer** — WebSocket proxy already exists (`tools/ws-proxy/proxy.mjs`), needs testing with real bzfs
 
 ### Medium priority
-5. **emscripten_fetch for cURLManager** — Real HTTP for server browser, MOTD
-6. **Optimize WASM size** — Release build with -O2 (~3-5MB vs current 11MB)
-7. **Progressive asset loading** — Lazy-load non-essential sounds/textures
-8. **Real server multiplayer** — WebSocket proxy already exists, needs testing
+4. **emscripten_fetch for cURLManager** — Real HTTP for server browser, MOTD
+5. **Optimize WASM size** — Release build with -O2 (~3-5MB vs current 11MB)
+6. **Progressive asset loading** — Lazy-load non-essential sounds/textures
 
 ### Lower priority
-9. **Mobile touch controls**
-10. **Native WebSocket in bzfs** — Eliminate proxy for real servers
-11. **WebRTC DataChannels** — Low-latency position updates
-12. **HTML/CSS menu overlay** — Better than GL-rendered menus
+7. **Audio** — Remove -mute flag, handle autoplay policy
+8. **Mobile touch controls**
+9. **Native WebSocket in bzfs** — Eliminate proxy for real servers
+10. **WebRTC DataChannels** — Low-latency position updates
+11. **HTML/CSS menu overlay** — Better than GL-rendered menus

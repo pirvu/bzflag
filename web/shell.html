@@ -195,11 +195,26 @@
     return { w: canvas.width, h: canvas.height };
   }
 
+  // Parse URL parameters for server connection
+  // Usage: ?server=hostname:port or ?server=ws://host:port
+  function getServerArgs() {
+    var params = new URLSearchParams(window.location.search);
+    var server = params.get('server');
+    var callsign = params.get('callsign') || 'Player';
+    if (server) {
+      // Real server mode — no solo, connect via proxy
+      return ['-nolist', '-mute', callsign + '@' + server];
+    }
+    // Default: solo mode with mock server
+    return ['-nolist', '-mute', '-solo', '3', callsign + '@localhost'];
+  }
+
   var Module = {
     canvas: (function() { return document.getElementById('canvas'); })(),
     arguments: (function() {
       var size = getCanvasSize();
-      return ['-window', size.w + 'x' + size.h, '-time', '12:00:00', '-longitude', '0', '-nolist', '-mute', '-solo', '3', 'Player@localhost'];
+      var args = ['-window', size.w + 'x' + size.h, '-time', '12:00:00', '-longitude', '0'];
+      return args.concat(getServerArgs());
     })(),
 
     setStatus: function(text) {

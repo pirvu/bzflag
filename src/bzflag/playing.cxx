@@ -5567,10 +5567,14 @@ static void joinInternetGame()
     }
 
     // use parallel UDP if desired and using server relay
+#ifdef __EMSCRIPTEN__
+    // Browser cannot do UDP — all traffic goes over WebSocket/TCP
+#else
     if (startupInfo.useUDPconnection)
         serverLink->sendUDPlinkRequest();
     else
         printError("No UDP connection, see Options to enable.");
+#endif
 
     HUDDialogStack::get()->setFailedMessage("Connection Established...");
 
