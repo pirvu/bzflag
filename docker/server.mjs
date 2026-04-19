@@ -7,13 +7,19 @@ import { WebSocketServer } from 'ws';
 import { spawn } from 'child_process';
 import { createConnection } from 'net';
 import { readFileSync, existsSync, statSync } from 'fs';
+import { createHash } from 'crypto';
 import { join, extname } from 'path';
 
 const PORT = parseInt(process.env.PORT || '8080');
 const BZFS_PORT = parseInt(process.env.BZFS_PORT || '5154');
 const STATIC_DIR = process.env.STATIC_DIR || '/app/public';
 const BZFS_ARGS = (process.env.BZFS_ARGS || '-j +r -ms 10 -mp 20 -noMasterBanlist -noudp').split(' ');
-const BUILD_ID = Date.now().toString(36); // cache buster
+
+// Deterministic BUILD_ID from WASM content hash — same build = same cache key
+const wasmPath = join(STATIC_DIR, 'bzflag.wasm');
+const BUILD_ID = existsSync(wasmPath)
+  ? createHash('md5').update(readFileSync(wasmPath)).digest('hex').slice(0, 8)
+  : Date.now().toString(36);
 
 const MIME_TYPES = {
   '.html': 'text/html',
@@ -311,6 +317,15 @@ function buildIndexHtml() {
     canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
     canvas.addEventListener('keydown', function(e) { if (e.key === 'Tab') e.preventDefault(); });
 
+    // Prevent WebGL context loss on tab switch
+    canvas.addEventListener('webglcontextlost', function(e) {
+      console.log('[BZFlag] WebGL context lost — preventing default');
+      e.preventDefault();
+    });
+    canvas.addEventListener('webglcontextrestored', function() {
+      console.log('[BZFlag] WebGL context restored');
+    });
+
     window.addEventListener('beforeunload', function() {
       try {
         var data = FS.readFile('/persistent/bzf/2.4/config.cfg', { encoding: 'utf8' });
@@ -346,7 +361,7 @@ const server = createServer((req, res) => {
     res.writeHead(200, {
       'Content-Type': 'text/html',
       'Content-Length': Buffer.byteLength(indexHtml),
-      'Cache-Control': 'no-store',
+      'Cache-Control': 'no-cache',  // revalidate each time, allows 304
       ...COMMON_HEADERS,
     });
     res.end(indexHtml);
@@ -370,10 +385,16 @@ const server = createServer((req, res) => {
   const mime = MIME_TYPES[ext] || 'application/octet-stream';
   const content = readFileSync(filePath);
 
+  // Versioned assets (with ?v=) get long cache; unversioned get no-cache
+  const hasVersionParam = req.url.includes('?v=');
+  const cacheControl = hasVersionParam
+    ? 'public, max-age=31536000, immutable'
+    : 'no-cache';
+
   res.writeHead(200, {
     'Content-Type': mime,
     'Content-Length': content.length,
-    'Cache-Control': 'no-store',
+    'Cache-Control': cacheControl,
     ...COMMON_HEADERS,
   });
   res.end(content);
