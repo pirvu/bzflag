@@ -1,0 +1,68 @@
+# Multi-stage build: WASM client + native bzfs server + Node.js server
+# Usage:
+#   docker build -f docker/Dockerfile.multiplayer -t bzflag-multiplayer .
+#   docker run -p 8080:8080 bzflag-multiplayer
+#   Open http://localhost:8080
+#
+# Single port serves everything: static files + WebSocket proxy to bzfs.
+# Players opening the page auto-connect to the bundled server.
+# Solo mode available at http://localhost:8080?solo
+
+# ── Stage 1: Build WASM client ──────────────────────────────────────
+FROM emscripten/emsdk:3.1.74 AS wasm-build
+
+WORKDIR /src
+COPY . .
+
+RUN mkdir -p build-emscripten && cd build-emscripten && \
+    emcmake cmake .. \
+      -DENABLE_CLIENT=ON \
+      -DENABLE_SERVER=OFF \
+      -DENABLE_BZADMIN=OFF && \
+    emmake make -j$(nproc) && \
+    cp /src/web/mock-server.js /src/build-emscripten/src/bzflag/
+
+# ── Stage 2: Build native bzfs server (Alpine for musl compatibility) ─
+FROM alpine:3.20 AS server-build
+
+RUN apk add --no-cache cmake make g++ pkgconf \
+        curl-dev c-ares-dev zlib-dev
+
+WORKDIR /src
+COPY . .
+
+RUN mkdir -p build-server && cd build-server && \
+    cmake .. \
+      -DENABLE_CLIENT=OFF \
+      -DENABLE_SERVER=ON \
+      -DENABLE_BZADMIN=OFF \
+      -DENABLE_PLUGINS=OFF && \
+    make -j$(nproc) bzfs
+
+# ── Stage 3: Runtime ────────────────────────────────────────────────
+FROM node:20-alpine
+
+RUN apk add --no-cache libcurl c-ares zlib libstdc++ libgcc
+
+WORKDIR /app
+
+# Copy WASM build artifacts (Node.js server serves its own index.html)
+RUN mkdir -p /app/public
+COPY --from=wasm-build /src/build-emscripten/src/bzflag/bzflag.html /app/public/bzflag.html
+COPY --from=wasm-build /src/build-emscripten/src/bzflag/bzflag.js /app/public/
+COPY --from=wasm-build /src/build-emscripten/src/bzflag/bzflag.wasm /app/public/
+COPY --from=wasm-build /src/build-emscripten/src/bzflag/bzflag.data /app/public/
+COPY --from=wasm-build /src/build-emscripten/src/bzflag/mock-server.js /app/public/
+
+# Copy native bzfs server
+COPY --from=server-build /src/build-server/src/bzfs/bzfs /usr/local/bin/bzfs
+
+# Copy and install Node.js server
+COPY docker/server.mjs /app/server.mjs
+RUN npm init -y && npm install ws
+
+ENV PORT=8080
+ENV STATIC_DIR=/app/public
+EXPOSE 8080
+
+CMD ["node", "server.mjs"]

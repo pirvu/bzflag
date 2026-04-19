@@ -196,16 +196,28 @@
   }
 
   // Parse URL parameters for server connection
-  // Usage: ?server=hostname:port or ?server=ws://host:port
+  // Usage: ?server=hostname:port  — connect via WebSocket proxy
+  //        ?solo                  — force solo mode with mock server
+  //        (default)              — auto-detect: use __bzServerConfig if set
+  //                                 (multiplayer Docker), else solo mode
   function getServerArgs() {
     var params = new URLSearchParams(window.location.search);
-    var server = params.get('server');
     var callsign = params.get('callsign') || 'Player';
+
+    if (params.has('solo')) {
+      return ['-nolist', '-mute', '-solo', '3', callsign + '@localhost'];
+    }
+    var server = params.get('server');
     if (server) {
-      // Real server mode — no solo, connect via proxy
       return ['-nolist', '-mute', callsign + '@' + server];
     }
-    // Default: solo mode with mock server
+    if (window.__bzServerConfig) {
+      var name = window.__bzServerConfig.callsign || callsign;
+      console.log('[BZFlag] Multiplayer mode: ' + name + '@' + window.__bzServerConfig.server);
+      return ['-nolist', '-mute', name + '@' + window.__bzServerConfig.server];
+    }
+    // Default: solo mode (standalone Dockerfile.web with no server)
+    console.log('[BZFlag] Solo mode (no __bzServerConfig)');
     return ['-nolist', '-mute', '-solo', '3', callsign + '@localhost'];
   }
 
