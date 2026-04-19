@@ -214,7 +214,14 @@ function buildIndexHtml() {
       adapter.url = url;
       return adapter;
     }
-    return protocols !== undefined ? new RealWebSocket(url, protocols) : new RealWebSocket(url);
+    // Multiplayer: rewrite ws://host:port to use same-origin WebSocket proxy
+    var wsUrl = url;
+    if (typeof url === 'string') {
+      var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+      wsUrl = proto + location.host + '/';
+      console.log('[BZFlag] Rewriting WebSocket ' + url + ' -> ' + wsUrl);
+    }
+    return protocols !== undefined ? new RealWebSocket(wsUrl, protocols) : new RealWebSocket(wsUrl);
   };
   window.WebSocket.CONNECTING = 0; window.WebSocket.OPEN = 1;
   window.WebSocket.CLOSING = 2; window.WebSocket.CLOSED = 3;
