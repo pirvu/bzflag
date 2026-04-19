@@ -317,13 +317,20 @@ function buildIndexHtml() {
     canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
     canvas.addEventListener('keydown', function(e) { if (e.key === 'Tab') e.preventDefault(); });
 
-    // Prevent WebGL context loss on tab switch
+    // Handle tab visibility — prevent WebGL context loss and restore on return
     canvas.addEventListener('webglcontextlost', function(e) {
       console.log('[BZFlag] WebGL context lost — preventing default');
       e.preventDefault();
     });
     canvas.addEventListener('webglcontextrestored', function() {
       console.log('[BZFlag] WebGL context restored');
+    });
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden) {
+        console.log('[BZFlag] Tab visible — restoring canvas');
+        resizeCanvas();
+        canvas.focus();
+      }
     });
 
     window.addEventListener('beforeunload', function() {

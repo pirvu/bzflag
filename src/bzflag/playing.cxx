@@ -5955,6 +5955,13 @@ void drawFrame(const float dt)
 
     checkDirtyControlPanel(controlPanel);
 
+#ifdef __EMSCRIPTEN__
+    // Skip rendering when browser tab is hidden to prevent WebGL errors.
+    // Use emscripten_sleep to properly yield back to the browser event loop.
+    while (EM_ASM_INT({ return document.hidden ? 1 : 0; }))
+        emscripten_sleep(100);
+#endif
+
     if (!unmapped)
     {
         // compute fps
