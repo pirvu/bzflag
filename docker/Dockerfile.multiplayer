@@ -61,8 +61,8 @@ COPY --from=server-build /src/build-server/src/bzfs/bzfs /usr/local/bin/bzfs
 COPY docker/server.mjs /app/server.mjs
 RUN npm init -y && npm install ws
 
-ENV PORT=8080
+ENV PORT=80
 ENV STATIC_DIR=/app/public
-EXPOSE 8080
+EXPOSE 80
 
 CMD ["node", "server.mjs"]
