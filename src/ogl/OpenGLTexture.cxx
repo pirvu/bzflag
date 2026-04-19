@@ -149,7 +149,16 @@ void OpenGLTexture::initContext()
     glTexImage2D(GL_TEXTURE_2D, 0, internalFormat,
                  scaledWidth, scaledHeight,
                  0, internalFormat, GL_UNSIGNED_BYTE, image);
-    glGenerateMipmap(GL_TEXTURE_2D);
+    // WebGL 1 only supports mipmaps on power-of-two textures
+    if ((scaledWidth & (scaledWidth - 1)) == 0 && (scaledHeight & (scaledHeight - 1)) == 0)
+        glGenerateMipmap(GL_TEXTURE_2D);
+    else
+    {
+        // NPOT: clamp to edge and use linear filtering (no mipmaps)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    }
 #else
     if (GLEW_VERSION_1_4)
     {
