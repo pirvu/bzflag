@@ -1,9 +1,5 @@
 name: Formatting
-on:
-  push:
-    branches: [2.4, master]
-  pull_request:
-    branches: [2.4, master]
+on: [push, pull_request]
 jobs:
   astyle:
     name: C++ astyle Lint
