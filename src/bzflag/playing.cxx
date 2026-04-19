@@ -27,6 +27,9 @@
 #include <utime.h>
 #endif
 #include <cmath>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 // common headers
 #include "AccessList.h"
@@ -7892,6 +7895,18 @@ void            startPlaying(BzfDisplay* _display,
 
     // start game loop
     playingLoop();
+
+#ifdef __EMSCRIPTEN__
+    // Notify JS that the game has ended, then freeze forever.
+    // We must NOT call exit/emscripten_force_exit because atexit handlers
+    // try to call GL functions after the WebGL context is destroyed.
+    // The page will be fully reloaded on restart so cleanup is unnecessary.
+    EM_ASM({
+        if (typeof window.__bzOnGameExit === 'function') window.__bzOnGameExit();
+    });
+    // Halt the C++ side permanently — no cleanup, no atexit, no destructors.
+    for (;;) emscripten_sleep(1000000);
+#endif
 
     delete worldDownLoader;
 

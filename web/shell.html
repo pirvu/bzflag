@@ -6,17 +6,16 @@
 <title>BZFlag</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; background: #1a1a2e; display: flex; align-items: center; justify-content: center; }
+  html, body { width: 100%; height: 100%; background: #1a1a2e; overflow: hidden; }
 
   #canvas {
     display: block;
-    width: 800px;
-    height: 600px;
+    width: 100%;
+    height: 100%;
     outline: none;
-    border: 1px solid #333;
   }
 
-  #loading {
+  #loading, #restart-screen {
     position: fixed;
     inset: 0;
     display: flex;
@@ -29,7 +28,7 @@
     z-index: 10;
   }
 
-  #loading h1 { font-size: 2rem; margin-bottom: 1.5rem; color: #ffffff; }
+  #loading h1, #restart-screen h1 { font-size: 2rem; margin-bottom: 1.5rem; color: #ffffff; }
 
   #progress-container {
     width: 320px; height: 8px; background: #2a2a4a; border-radius: 4px; overflow: hidden;
@@ -40,6 +39,20 @@
   }
 
   #progress-text { margin-top: 0.75rem; font-size: 0.875rem; color: #999; }
+
+  #restart-screen { display: none; }
+  #restart-screen p { margin-bottom: 1.5rem; color: #999; font-size: 0.95rem; }
+  #restart-btn {
+    padding: 0.75rem 2rem;
+    font-size: 1.1rem;
+    background: #4a9eff;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  #restart-btn:hover { background: #3a8eef; }
 </style>
 </head>
 <body>
@@ -49,6 +62,13 @@
   <h1>BZFlag</h1>
   <div id="progress-container"><div id="progress-bar"></div></div>
   <div id="progress-text">Loading...</div>
+</div>
+
+<!-- Restart screen (shown after game exits) -->
+<div id="restart-screen">
+  <h1>BZFlag</h1>
+  <p>Game ended.</p>
+  <button id="restart-btn">Restart</button>
 </div>
 
 <!-- Game canvas -->
@@ -61,10 +81,15 @@
   var MockBZFlagServer = window.MockBZFlagServer;
   if (!MockBZFlagServer) return;
 
-  var mockServer = new MockBZFlagServer({
-    worldSize: 800.0, gameType: 1, maxShots: 10, maxPlayers: 20, debug: true,
-  });
-  window.__bzMockServer = mockServer;
+  window.__bzCreateMockServer = function() {
+    var mockServer = new MockBZFlagServer({
+      worldSize: 800.0, gameType: 1, maxShots: 10, maxPlayers: 20, debug: true,
+    });
+    window.__bzMockServer = mockServer;
+    return mockServer;
+  };
+
+  var currentMockServer = window.__bzCreateMockServer();
 
   function MockWebSocketAdapter(server) {
     this.server = server;
@@ -125,7 +150,7 @@
   window.WebSocket = function(url, protocols) {
     if (typeof url === 'string' && (url.indexOf('localhost') !== -1 || url.indexOf('127.0.0.1') !== -1)) {
       console.log('[BZFlag] Intercepting WebSocket to ' + url + ' -> mock server');
-      var adapter = new MockWebSocketAdapter(mockServer);
+      var adapter = new MockWebSocketAdapter(window.__bzMockServer);
       adapter.url = url;
       return adapter;
     }
@@ -138,9 +163,44 @@
 </script>
 
 <script>
+  // Resize canvas to fill window at device pixel ratio
+  var _resizing = false;
+  function resizeCanvas() {
+    if (_resizing) return;
+    _resizing = true;
+    var canvas = document.getElementById('canvas');
+    if (!canvas || canvas.style.display === 'none') { _resizing = false; return; }
+    var w = window.innerWidth;
+    var h = window.innerHeight;
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    _resizing = false;
+  }
+
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  // Called from C++ (EM_ASM) when the game loop ends
+  window.__bzOnGameExit = function() {
+    console.log('[BZFlag] Game exited');
+    var canvas = document.getElementById('canvas');
+    if (canvas) canvas.style.display = 'none';
+    document.getElementById('restart-screen').style.display = 'flex';
+  };
+
+  function getCanvasSize() {
+    var canvas = document.getElementById('canvas');
+    return { w: canvas.width, h: canvas.height };
+  }
+
   var Module = {
     canvas: (function() { return document.getElementById('canvas'); })(),
-    arguments: ['-window', '800x600', '-time', '12:00:00', '-longitude', '0', '-nolist', '-mute', '-solo', '3', 'Player@localhost'],
+    arguments: (function() {
+      var size = getCanvasSize();
+      return ['-window', size.w + 'x' + size.h, '-time', '12:00:00', '-longitude', '0', '-nolist', '-mute', '-solo', '3', 'Player@localhost'];
+    })(),
 
     setStatus: function(text) {
       var el = document.getElementById('loading');
@@ -159,7 +219,6 @@
   // Canvas focus and context menu
   (function() {
     var c = document.getElementById('canvas');
-    c.width = 800; c.height = 600;
     c.addEventListener('click', function() { c.focus(); });
     c.addEventListener('contextmenu', function(e) { e.preventDefault(); });
     c.addEventListener('keydown', function(e) {
@@ -174,6 +233,11 @@
       var data = FS.readFile(configPath, { encoding: 'utf8' });
       localStorage.setItem('bzflag-config', data);
     } catch(e) {}
+  });
+
+  // Restart: reload the page to get a fresh WASM instance
+  document.getElementById('restart-btn').addEventListener('click', function() {
+    window.location.reload();
   });
 </script>
 
