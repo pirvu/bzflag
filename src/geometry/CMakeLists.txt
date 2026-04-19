@@ -1,0 +1,47 @@
+add_library(BZFlag_Geometry STATIC
+    AnimatedTreads.cxx
+    BillboardSceneNode.cxx
+    BoltSceneNode.cxx
+    EighthDBaseSceneNode.cxx
+    EighthDBoxSceneNode.cxx
+    EighthDimSceneNode.cxx
+    EighthDimShellNode.cxx
+    EighthDPyrSceneNode.cxx
+    FlagSceneNode.cxx
+    FlagWarpSceneNode.cxx
+    LaserSceneNode.cxx
+    MeshDrawMgr.cxx
+    MeshFragSceneNode.cxx
+    MeshPolySceneNode.cxx
+    MeshRenderNode.cxx
+    MeshSceneNode.cxx
+    OccluderSceneNode.cxx
+    PolyWallSceneNode.cxx
+    QuadWallSceneNode.cxx
+    SceneNode.cxx
+    SphereSceneNode.cxx
+    TankGeometryMgr.cxx
+    TankSceneNode.cxx
+    TriWallSceneNode.cxx
+    ViewFrustum.cxx
+    WallSceneNode.cxx
+    models/tank/high_barrel.cxx
+    models/tank/high_body.cxx
+    models/tank/high_ltread.cxx
+    models/tank/high_rtread.cxx
+    models/tank/high_turret.cxx
+    models/tank/low_barrel.cxx
+    models/tank/low_body.cxx
+    models/tank/low_ltread.cxx
+    models/tank/low_rtread.cxx
+    models/tank/low_turret.cxx
+    models/tank/medium_body.cxx
+    models/tank/medium_ltread.cxx
+    models/tank/medium_rtread.cxx
+    models/tank/medium_turret.cxx
+)
+
+target_include_directories(BZFlag_Geometry PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_BINARY_DIR}/include
+)

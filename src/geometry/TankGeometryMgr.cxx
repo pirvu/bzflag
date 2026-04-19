@@ -187,6 +187,14 @@ void TankGeometryMgr::buildLists()
     // setup the scale factors
     setupScales();
     currentScaleFactor = scaleFactors[Normal];
+
+#ifdef __EMSCRIPTEN__
+    // Under Emscripten, display lists (glGenLists/glNewList/glCallList) are
+    // no-ops. Tank rendering uses TankGeometryMgr::renderPart() which calls
+    // the part build functions directly each frame. We still need setupScales()
+    // and setTreadStyle() above, but skip display list creation.
+    return;
+#endif
     const bool animated = BZDBCache::animatedTreads;
 
     // setup the quality level
@@ -301,6 +309,55 @@ int TankGeometryMgr::getPartTriangleCount(TankGeometryEnums::TankShadow sh,
 }
 
 
+void TankGeometryMgr::renderPart(TankShadow shadow,
+                                 TankPart part,
+                                 TankSize size,
+                                 TankLOD lod)
+{
+    if ((part == Barrel) && (lod == MedTankLOD))
+        lod = LowTankLOD;
+
+    shadowMode = (TankShadow)shadow;
+    currentScaleFactor = scaleFactors[size];
+
+    const bool animated = BZDBCache::animatedTreads;
+
+    if ((part <= Turret) || (!animated))
+    {
+        if (partFunctions[lod][part])
+            partFunctions[lod][part]();
+    }
+    else
+    {
+        int quality = RENDERER.useQuality();
+        if (quality < 0) quality = 0;
+        else if (quality > 3) quality = 3;
+        const int divisionLevels[4][2] = {{4,4},{8,16},{12,24},{16,32}};
+        int wheelDivs = divisionLevels[quality][0];
+        int treadDivs = divisionLevels[quality][1];
+
+        if (part == LeftCasing)
+            buildHighLCasingAnim();
+        else if (part == RightCasing)
+            buildHighRCasingAnim();
+        else if (part == LeftTread)
+            buildHighLTread(treadDivs);
+        else if (part == RightTread)
+            buildHighRTread(treadDivs);
+        else if ((part >= LeftWheel0) && (part <= LeftWheel3))
+        {
+            int wheel = part - LeftWheel0;
+            buildHighLWheel(wheel, (float)wheel * (float)(M_PI / 2.0), wheelDivs);
+        }
+        else if ((part >= RightWheel0) && (part <= RightWheel3))
+        {
+            int wheel = part - RightWheel0;
+            buildHighRWheel(wheel, (float)wheel * (float)(M_PI / 2.0), wheelDivs);
+        }
+    }
+}
+
+
 const float* TankGeometryMgr::getScaleFactor(TankSize size)
 {
     return scaleFactors[size];
@@ -394,6 +451,14 @@ void TankGeometryUtils::doVertex3f(GLfloat x, GLfloat y, GLfloat z)
 
 void TankGeometryUtils::doNormal3f(GLfloat x, GLfloat y, GLfloat z)
 {
+#ifdef __EMSCRIPTEN__
+    // Under Emscripten, lighting is disabled and normals are called
+    // inconsistently across vertices in the same glBegin/glEnd block
+    // (some vertices have doNormal3f, others don't). This creates
+    // inconsistent attribute stride in the GL emulation. Since lighting
+    // is off, skip normals entirely for consistent stride.
+    return;
+#endif
     if (shadowMode == ShadowOn)
         return;
     const float* scale = currentScaleFactor;
@@ -415,7 +480,15 @@ void TankGeometryUtils::doNormal3f(GLfloat x, GLfloat y, GLfloat z)
 void TankGeometryUtils::doTexCoord2f(GLfloat x, GLfloat y)
 {
     if (shadowMode == ShadowOn)
+    {
+#ifdef __EMSCRIPTEN__
+        // Under Emscripten, always emit texcoords to keep stride consistent.
+        // Every vertex in tank models calls doTexCoord2f, so this ensures
+        // uniform attribute layout even in shadow mode.
+        glTexCoord2f(0.0f, 0.0f);
+#endif
         return;
+    }
     glTexCoord2f(x, y);
     return;
 }

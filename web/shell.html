@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BZFlag</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #1a1a2e; overflow: hidden; }
+
+  #canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    outline: none;
+  }
+
+  #loading, #restart-screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    z-index: 10;
+  }
+
+  #loading h1, #restart-screen h1 { font-size: 2rem; margin-bottom: 1.5rem; color: #ffffff; }
+
+  #progress-container {
+    width: 320px; height: 8px; background: #2a2a4a; border-radius: 4px; overflow: hidden;
+  }
+
+  #progress-bar {
+    width: 0%; height: 100%; background: #4a9eff; border-radius: 4px; transition: width 0.2s ease;
+  }
+
+  #progress-text { margin-top: 0.75rem; font-size: 0.875rem; color: #999; }
+
+  #restart-screen { display: none; }
+  #restart-screen p { margin-bottom: 1.5rem; color: #999; font-size: 0.95rem; }
+  #restart-btn {
+    padding: 0.75rem 2rem;
+    font-size: 1.1rem;
+    background: #4a9eff;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  #restart-btn:hover { background: #3a8eef; }
+</style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div id="loading">
+  <h1>BZFlag</h1>
+  <div id="progress-container"><div id="progress-bar"></div></div>
+  <div id="progress-text">Loading...</div>
+</div>
+
+<!-- Restart screen (shown after game exits) -->
+<div id="restart-screen">
+  <h1>BZFlag</h1>
+  <p>Game ended.</p>
+  <button id="restart-btn">Restart</button>
+</div>
+
+<!-- Game canvas -->
+<canvas id="canvas" tabindex="0"></canvas>
+
+<!-- Mock BZFlag server for solo mode -->
+<script src="mock-server.js"></script>
+<script>
+(function() {
+  var MockBZFlagServer = window.MockBZFlagServer;
+  if (!MockBZFlagServer) return;
+
+  window.__bzCreateMockServer = function() {
+    var mockServer = new MockBZFlagServer({
+      worldSize: 800.0, gameType: 1, maxShots: 10, maxPlayers: 20, debug: true,
+    });
+    window.__bzMockServer = mockServer;
+    return mockServer;
+  };
+
+  var currentMockServer = window.__bzCreateMockServer();
+
+  function MockWebSocketAdapter(server) {
+    this.server = server;
+    this.readyState = 0;
+    this.binaryType = 'arraybuffer';
+    this.onopen = null; this.onmessage = null; this.onclose = null; this.onerror = null;
+    this.bufferedAmount = 0; this.extensions = ''; this.protocol = ''; this.url = '';
+    this.CONNECTING = 0; this.OPEN = 1; this.CLOSING = 2; this.CLOSED = 3;
+
+    var self = this;
+    var serverAdapter = {
+      send: function(data) {
+        if (self.readyState !== 1) return;
+        var ab = data instanceof ArrayBuffer ? data : data.buffer || data;
+        if (self.onmessage) {
+          setTimeout(function() { if (self.onmessage) self.onmessage({ data: ab }); }, 0);
+        }
+      },
+      close: function() { self._doClose(); },
+      _handshakePhase: 'waiting_header',
+      _handshakeBuf: new Uint8Array(0),
+      _playerId: -1,
+      _msgBuf: new Uint8Array(0),
+    };
+
+    this._playerId = server.onConnection(serverAdapter);
+    setTimeout(function() { self.readyState = 1; if (self.onopen) self.onopen({}); }, 0);
+  }
+
+  MockWebSocketAdapter.prototype.send = function(data) {
+    if (this.readyState !== 1) return;
+    var bytes;
+    if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+    else if (data instanceof Uint8Array) bytes = data;
+    else if (ArrayBuffer.isView(data)) bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    else bytes = new TextEncoder().encode(data);
+    var server = this.server; var playerId = this._playerId;
+    setTimeout(function() { server.onMessage(playerId, bytes); }, 0);
+  };
+  MockWebSocketAdapter.prototype.close = function() {
+    if (this.readyState >= 2) return;
+    this.readyState = 2; this.server.onDisconnect(this._playerId); this._doClose();
+  };
+  MockWebSocketAdapter.prototype._doClose = function() {
+    if (this.readyState === 3) return; this.readyState = 3;
+    var self = this;
+    if (this.onclose) setTimeout(function() { if (self.onclose) self.onclose({ code: 1000, reason: '', wasClean: true }); }, 0);
+  };
+  MockWebSocketAdapter.prototype.addEventListener = function(type, fn) {
+    if (type === 'open') this.onopen = fn;
+    else if (type === 'message') this.onmessage = fn;
+    else if (type === 'close') this.onclose = fn;
+    else if (type === 'error') this.onerror = fn;
+  };
+  MockWebSocketAdapter.prototype.removeEventListener = function() {};
+
+  var RealWebSocket = window.WebSocket;
+  window.WebSocket = function(url, protocols) {
+    if (typeof url === 'string' && (url.indexOf('localhost') !== -1 || url.indexOf('127.0.0.1') !== -1)) {
+      console.log('[BZFlag] Intercepting WebSocket to ' + url + ' -> mock server');
+      var adapter = new MockWebSocketAdapter(window.__bzMockServer);
+      adapter.url = url;
+      return adapter;
+    }
+    return protocols !== undefined ? new RealWebSocket(url, protocols) : new RealWebSocket(url);
+  };
+  window.WebSocket.CONNECTING = 0; window.WebSocket.OPEN = 1;
+  window.WebSocket.CLOSING = 2; window.WebSocket.CLOSED = 3;
+  window.WebSocket.prototype = RealWebSocket.prototype;
+})();
+</script>
+
+<script>
+  // Resize canvas to fill window at device pixel ratio
+  var _resizing = false;
+  function resizeCanvas() {
+    if (_resizing) return;
+    _resizing = true;
+    var canvas = document.getElementById('canvas');
+    if (!canvas || canvas.style.display === 'none') { _resizing = false; return; }
+    var w = window.innerWidth;
+    var h = window.innerHeight;
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    _resizing = false;
+  }
+
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  // Called from C++ (EM_ASM) when the game loop ends
+  window.__bzOnGameExit = function() {
+    console.log('[BZFlag] Game exited');
+    var canvas = document.getElementById('canvas');
+    if (canvas) canvas.style.display = 'none';
+    document.getElementById('restart-screen').style.display = 'flex';
+  };
+
+  function getCanvasSize() {
+    var canvas = document.getElementById('canvas');
+    return { w: canvas.width, h: canvas.height };
+  }
+
+  // Parse URL parameters for server connection
+  // Usage: ?server=hostname:port  — connect via WebSocket proxy
+  //        ?solo                  — force solo mode with mock server
+  //        (default)              — auto-detect: use __bzServerConfig if set
+  //                                 (multiplayer Docker), else solo mode
+  function getServerArgs() {
+    var params = new URLSearchParams(window.location.search);
+    var callsign = params.get('callsign') || 'Player';
+
+    if (params.has('solo')) {
+      return ['-nolist', '-mute', '-solo', '3', callsign + '@localhost'];
+    }
+    var server = params.get('server');
+    if (server) {
+      return ['-nolist', '-mute', callsign + '@' + server];
+    }
+    if (window.__bzServerConfig) {
+      var name = window.__bzServerConfig.callsign || callsign;
+      console.log('[BZFlag] Multiplayer mode: ' + name + '@' + window.__bzServerConfig.server);
+      return ['-nolist', '-mute', name + '@' + window.__bzServerConfig.server];
+    }
+    // Default: solo mode (standalone Dockerfile.web with no server)
+    console.log('[BZFlag] Solo mode (no __bzServerConfig)');
+    return ['-nolist', '-mute', '-solo', '3', callsign + '@localhost'];
+  }
+
+  var Module = {
+    canvas: (function() { return document.getElementById('canvas'); })(),
+    arguments: (function() {
+      var size = getCanvasSize();
+      var args = ['-window', size.w + 'x' + size.h, '-time', '12:00:00', '-longitude', '0'];
+      return args.concat(getServerArgs());
+    })(),
+
+    setStatus: function(text) {
+      var el = document.getElementById('loading');
+      var bar = document.getElementById('progress-bar');
+      var txt = document.getElementById('progress-text');
+      if (!text) { el.style.display = 'none'; document.getElementById('canvas').focus(); return; }
+      txt.textContent = text;
+      var m = text.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+)/);
+      if (m && parseInt(m[2]) > 0) bar.style.width = ((parseInt(m[1]) / parseInt(m[2])) * 100) + '%';
+    },
+
+    print: function(text) { console.log(text); },
+    printErr: function(text) { console.warn(text); }
+  };
+
+  // Canvas focus and context menu
+  (function() {
+    var c = document.getElementById('canvas');
+    c.addEventListener('click', function() { c.focus(); });
+    c.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+    c.addEventListener('keydown', function(e) {
+      if (e.key === 'Tab') e.preventDefault();
+    });
+  })();
+
+  // Auto-save config to localStorage on page unload
+  window.addEventListener('beforeunload', function() {
+    try {
+      var configPath = '/persistent/bzf/2.4/config.cfg';
+      var data = FS.readFile(configPath, { encoding: 'utf8' });
+      localStorage.setItem('bzflag-config', data);
+    } catch(e) {}
+  });
+
+  // Restart: reload the page to get a fresh WASM instance
+  document.getElementById('restart-btn').addEventListener('click', function() {
+    window.location.reload();
+  });
+</script>
+
+{{{ SCRIPT }}}
+
+</body>
+</html>

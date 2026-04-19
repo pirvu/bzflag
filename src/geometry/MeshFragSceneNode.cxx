@@ -64,6 +64,7 @@ void MeshFragSceneNode::Geometry::initDisplayList()
     if (list != INVALID_GL_LIST_ID)
         glDeleteLists(list, 1);
     list = INVALID_GL_LIST_ID;
+#ifndef __EMSCRIPTEN__
     if (BZDB.isTrue("meshLists"))
     {
         list = glGenLists(1);
@@ -71,6 +72,7 @@ void MeshFragSceneNode::Geometry::initDisplayList()
         drawVTN();
         glEndList();
     }
+#endif
     return;
 }
 

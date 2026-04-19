@@ -27,6 +27,9 @@
 #include <utime.h>
 #endif
 #include <cmath>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 // common headers
 #include "AccessList.h"
@@ -5564,10 +5567,14 @@ static void joinInternetGame()
     }
 
     // use parallel UDP if desired and using server relay
+#ifdef __EMSCRIPTEN__
+    // Browser cannot do UDP — all traffic goes over WebSocket/TCP
+#else
     if (startupInfo.useUDPconnection)
         serverLink->sendUDPlinkRequest();
     else
         printError("No UDP connection, see Options to enable.");
+#endif
 
     HUDDialogStack::get()->setFailedMessage("Connection Established...");
 
@@ -5657,6 +5664,13 @@ static void     renderDialog()
         glPushMatrix();
         glLoadIdentity();
         OpenGLGState::resetState();
+#ifdef __EMSCRIPTEN__
+        // Ensure clean GL state for 2D overlay rendering under Emscripten's
+        // legacy GL emulation: depth test and lighting must be off so that
+        // menu text quads are not depth-culled or darkened.
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_LIGHTING);
+#endif
         HUDDialogStack::get()->render();
         glPopMatrix();
     }
@@ -5940,6 +5954,13 @@ void drawFrame(const float dt)
     GLfloat targetPoint[3];
 
     checkDirtyControlPanel(controlPanel);
+
+#ifdef __EMSCRIPTEN__
+    // Skip rendering when browser tab is hidden to prevent WebGL errors.
+    // Use emscripten_sleep to properly yield back to the browser event loop.
+    while (EM_ASM_INT({ return document.hidden ? 1 : 0; }))
+        emscripten_sleep(100);
+#endif
 
     if (!unmapped)
     {
@@ -7885,6 +7906,18 @@ void            startPlaying(BzfDisplay* _display,
 
     // start game loop
     playingLoop();
+
+#ifdef __EMSCRIPTEN__
+    // Notify JS that the game has ended, then freeze forever.
+    // We must NOT call exit/emscripten_force_exit because atexit handlers
+    // try to call GL functions after the WebGL context is destroyed.
+    // The page will be fully reloaded on restart so cleanup is unnecessary.
+    EM_ASM({
+        if (typeof window.__bzOnGameExit === 'function') window.__bzOnGameExit();
+    });
+    // Halt the C++ side permanently — no cleanup, no atexit, no destructors.
+    for (;;) emscripten_sleep(1000000);
+#endif
 
     delete worldDownLoader;
 

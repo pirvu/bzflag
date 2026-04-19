@@ -95,6 +95,11 @@ int getPartTriangleCount(TankGeometryEnums::TankShadow shadow,
                          TankGeometryEnums::TankSize size,
                          TankGeometryEnums::TankLOD lod);
 
+void renderPart(TankGeometryEnums::TankShadow shadow,
+                TankGeometryEnums::TankPart part,
+                TankGeometryEnums::TankSize size,
+                TankGeometryEnums::TankLOD lod);
+
 const float* getScaleFactor(TankGeometryEnums::TankSize size);
 }
 

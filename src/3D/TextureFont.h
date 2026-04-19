@@ -39,6 +39,7 @@ public:
 
 private:
     void preLoadLists();
+    void renderGlyph(int charIndex);
 
     unsigned int  listIDs[MAX_TEXTURE_FONT_CHARS];
 
