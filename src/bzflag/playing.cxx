@@ -5956,10 +5956,16 @@ void drawFrame(const float dt)
     checkDirtyControlPanel(controlPanel);
 
 #ifdef __EMSCRIPTEN__
-    // Skip rendering when browser tab is hidden to prevent WebGL errors.
-    // Use emscripten_sleep to properly yield back to the browser event loop.
-    while (EM_ASM_INT({ return document.hidden ? 1 : 0; }))
+    // Skip rendering when the browser tab is hidden to prevent WebGL errors,
+    // but return to the main loop so network traffic keeps flowing and the
+    // server doesn't drop us. Normally the buffer swap yields to the browser;
+    // since we skip it, yield here instead (browsers throttle timers in
+    // hidden tabs, so this runs at a reduced rate).
+    if (EM_ASM_INT({ return document.hidden ? 1 : 0; }))
+    {
         emscripten_sleep(100);
+        return;
+    }
 #endif
 
     if (!unmapped)

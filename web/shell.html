@@ -41,7 +41,7 @@
   #progress-text { margin-top: 0.75rem; font-size: 0.875rem; color: #999; }
 
   #restart-screen { display: none; }
-  #restart-screen p { margin-bottom: 1.5rem; color: #999; font-size: 0.95rem; }
+  #restart-screen p { margin-bottom: 1.5rem; color: #999; font-size: 0.95rem; max-width: 40rem; text-align: center; }
   #restart-btn {
     padding: 0.75rem 2rem;
     font-size: 1.1rem;
@@ -67,7 +67,7 @@
 <!-- Restart screen (shown after game exits) -->
 <div id="restart-screen">
   <h1>BZFlag</h1>
-  <p>Game ended.</p>
+  <p id="restart-msg">Game ended.</p>
   <button id="restart-btn">Restart</button>
 </div>
 
@@ -148,7 +148,9 @@
 
   var RealWebSocket = window.WebSocket;
   window.WebSocket = function(url, protocols) {
-    if (typeof url === 'string' && (url.indexOf('localhost') !== -1 || url.indexOf('127.0.0.1') !== -1)) {
+    // Only solo games talk to the in-page mock server; matching on the
+    // hostname would also capture real servers on localhost.
+    if (window.__bzSolo) {
       console.log('[BZFlag] Intercepting WebSocket to ' + url + ' -> mock server');
       var adapter = new MockWebSocketAdapter(window.__bzMockServer);
       adapter.url = url;
@@ -190,6 +192,32 @@
     document.getElementById('restart-screen').style.display = 'flex';
   };
 
+  // Show the end screen with an error message instead of leaving a stuck
+  // loading screen or a black canvas when something goes wrong.
+  var _bzFailed = false;
+  function showFatalError(msg) {
+    if (_bzFailed) return;
+    _bzFailed = true;
+    console.error('[BZFlag] Fatal: ' + msg);
+    var canvas = document.getElementById('canvas');
+    if (canvas) canvas.style.display = 'none';
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('restart-msg').textContent = msg;
+    document.getElementById('restart-screen').style.display = 'flex';
+  }
+  window.addEventListener('error', function(e) {
+    showFatalError('The game crashed: ' + (e.message || 'unknown error'));
+  });
+  window.addEventListener('unhandledrejection', function(e) {
+    showFatalError('The game crashed: ' + (e.reason && e.reason.message || e.reason || 'unknown error'));
+  });
+  function hasWebGL() {
+    try {
+      var c = document.createElement('canvas');
+      return !!(window.WebGLRenderingContext && (c.getContext('webgl') || c.getContext('experimental-webgl')));
+    } catch (e) { return false; }
+  }
+
   function getCanvasSize() {
     var canvas = document.getElementById('canvas');
     return { w: canvas.width, h: canvas.height };
@@ -205,6 +233,7 @@
     var callsign = params.get('callsign') || 'Player';
 
     if (params.has('solo')) {
+      window.__bzSolo = true;
       return ['-nolist', '-mute', '-solo', '3', callsign + '@localhost'];
     }
     var server = params.get('server');
@@ -218,6 +247,7 @@
     }
     // Default: solo mode (standalone Dockerfile.web with no server)
     console.log('[BZFlag] Solo mode (no __bzServerConfig)');
+    window.__bzSolo = true;
     return ['-nolist', '-mute', '-solo', '3', callsign + '@localhost'];
   }
 
@@ -240,8 +270,12 @@
     },
 
     print: function(text) { console.log(text); },
-    printErr: function(text) { console.warn(text); }
+    printErr: function(text) { console.warn(text); },
+    onAbort: function(what) { showFatalError('The game stopped unexpectedly: ' + what); }
   };
+
+  if (!hasWebGL())
+    showFatalError('Your browser does not support WebGL, which BZFlag needs to run.');
 
   // Canvas focus and context menu
   (function() {

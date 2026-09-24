@@ -20,6 +20,9 @@ wss.on('connection', (ws, req) => {
   const tcp = net.createConnection({ host: TCP_HOST, port: TCP_PORT }, () => {
     console.log(`[TCP] Connected to ${TCP_HOST}:${TCP_PORT}`);
   });
+  // Game updates are small, latency-sensitive messages: don't let Nagle
+  // batch them.
+  tcp.setNoDelay(true);
 
   tcp.on('data', (data) => {
     console.log(`[TCP->WS] ${data.length} bytes: ${data.toString('hex').substring(0, 40)}...`);

@@ -626,6 +626,13 @@ void WeatherRenderer::rebuildContext(void)
 
 void WeatherRenderer::buildDropList(bool _draw)
 {
+#ifdef __EMSCRIPTEN__
+    // No display lists under WebGL: the geometry is emitted directly each
+    // time it is drawn, so building a list would only draw it once to
+    // whatever is bound right now.
+    if (!_draw)
+        return;
+#endif
     if (!_draw)
     {
         if (dropList != INVALID_GL_LIST_ID)
@@ -711,6 +718,13 @@ void WeatherRenderer::buildDropList(bool _draw)
 
 void WeatherRenderer::buildPuddleList(bool _draw)
 {
+#ifdef __EMSCRIPTEN__
+    // No display lists under WebGL: the geometry is emitted directly each
+    // time it is drawn, so building a list would only draw it once to
+    // whatever is bound right now.
+    if (!_draw)
+        return;
+#endif
     float scale = 1;
     if (!_draw)
     {

@@ -84,6 +84,42 @@ DWORD WINAPI ThreadConnect(LPVOID params)
 // FIXME -- packet recording
 FILE* packetStream = NULL;
 TimeKeeper packetStartTime;
+#ifdef __EMSCRIPTEN__
+// Browser sockets never block and select() doesn't yield to the browser
+// event loop, so poll with emscripten_sleep() until exactly len bytes have
+// arrived. Data may be split across several WebSocket frames.
+// Returns len on success, 0 if the server closed the connection, -1 on
+// error or timeout.
+static int emscriptenRecvAll(int fd, char* buf, int len, double timeout)
+{
+    int got = 0;
+    const double start = TimeKeeper::getCurrent().getSeconds();
+    while (got < len)
+    {
+        int r = recv(fd, buf + got, len - got, 0);
+        if (r > 0)
+        {
+            got += r;
+            continue;
+        }
+        if (r == 0)
+            return 0;
+        if (errno != EAGAIN && errno != EWOULDBLOCK)
+        {
+            logDebugMessage(1, "CONNECT:recv error %d\n", errno);
+            return -1;
+        }
+        if (TimeKeeper::getCurrent().getSeconds() - start > timeout)
+        {
+            logDebugMessage(1, "CONNECT:timeout after %d of %d bytes\n", got, len);
+            return -1;
+        }
+        emscripten_sleep(10);
+    }
+    return got;
+}
+#endif
+
 static const unsigned long serverPacket = 1;
 static const unsigned long endPacket = 0;
 
@@ -159,9 +195,9 @@ ServerLink::ServerLink(const Address& serverAddress, int port) :
             return;
         }
     }
-    // Yield to the browser event loop so the WebSocket handshake completes.
-    // ASYNCIFY makes emscripten_sleep() yield control back to the browser.
-    emscripten_sleep(500);
+    // No need to wait for the WebSocket to open here: sends made while it is
+    // still connecting are queued by the socket layer, and the version read
+    // below polls with emscripten_sleep() until the reply arrives.
 #elif !defined(_WIN32)
     okay = true;
     fdMax = query;
@@ -235,49 +271,13 @@ ServerLink::ServerLink(const Address& serverAddress, int port) :
     logDebugMessage(2,"CONNECT:send in connect returned %d\n",sendRepply);
 
 #ifdef __EMSCRIPTEN__
-    // Emscripten: select() doesn't yield to the browser event loop,
-    // so we poll with emscripten_sleep() to let WebSocket I/O proceed.
+    // the connect header was queued by the socket layer if the WebSocket
+    // is still opening; wait for the full 8-byte version reply
+    i = emscriptenRecvAll(query, version, 8, 15.0);
+    if (i <= 0)
     {
-        bool gotNetData = false;
-        int loopCount = 0;
-        double thisStartTime = TimeKeeper::getCurrent().getSeconds();
-        double connectTimeout = 15.0;
-
-        while (!gotNetData)
-        {
-            loopCount++;
-            // Yield to event loop so WebSocket frames can arrive
-            emscripten_sleep(100);
-
-            i = recv(query, (char*)version, 8, MSG_DONTWAIT);
-
-            if (i > 0)
-            {
-                logDebugMessage(2,"CONNECT:got %d bytes from server\n",i);
-                gotNetData = true;
-            }
-            else if (i == 0)
-            {
-                logDebugMessage(1,"CONNECT:connection closed by server\n");
-                close(query);
-                return;
-            }
-            else
-            {
-                if (errno != EAGAIN && errno != EWOULDBLOCK && errno != 0)
-                {
-                    logDebugMessage(1,"CONNECT:recv error %d\n",errno);
-                    close(query);
-                    return;
-                }
-                if ((TimeKeeper::getCurrent().getSeconds() - thisStartTime) > connectTimeout)
-                {
-                    logDebugMessage(1,"CONNECT:timeout after %d loops\n",loopCount);
-                    close(query);
-                    return;
-                }
-            }
-        }
+        close(query);
+        return;
     }
 #else
     // wait to get data back. we are still blocking so these
@@ -384,6 +384,14 @@ ServerLink::ServerLink(const Address& serverAddress, int port) :
     }
 
     // read local player's id
+#if defined(__EMSCRIPTEN__)
+    i = emscriptenRecvAll(query, (char *) &id, sizeof(id), 5.0);
+    if (i < (int) sizeof(id))
+    {
+        close(query);
+        return;
+    }
+#else
 #if !defined(_WIN32)
     FD_ZERO(&read_set);
     FD_SET((unsigned int)query, &read_set);
@@ -399,6 +407,7 @@ ServerLink::ServerLink(const Address& serverAddress, int port) :
     i = recv(query, (char *) &id, sizeof(id), 0);
     if (i < (int) sizeof(id))
         return;
+#endif // __EMSCRIPTEN__
     if (id == 0xff)
     {
         state = Rejected;
@@ -568,14 +577,23 @@ int ServerLink::fillTcpReadBuffer(int blockTime)
     if (!emptySpace)
         return 0;
 
+#if defined(__EMSCRIPTEN__)
+    // Browser sockets never block and select() doesn't yield to the browser
+    // event loop. Poll first; only if nothing is queued, yield with
+    // emscripten_sleep() for at most the requested time (capped so an
+    // indefinite wait still re-polls regularly) and poll again.
+    int rlen = recv(fd, &tbuf[tcpBufferPos], emptySpace, 0);
+    if (rlen < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) && blockTime)
+    {
+        emscripten_sleep(blockTime > 0 && blockTime < 50 ? blockTime : 50);
+        rlen = recv(fd, &tbuf[tcpBufferPos], emptySpace, 0);
+    }
+    // recv() returning 0 means the WebSocket was closed by the server
+    if (rlen == 0)
+        return -1;
+#else
     if (blockTime)
     {
-#if defined(__EMSCRIPTEN__)
-        // On Emscripten, select() with NULL timeout blocks the main thread
-        // indefinitely without yielding to the browser event loop. Use
-        // emscripten_sleep() to yield so WebSocket messages can arrive.
-        emscripten_sleep(50);
-#else
         // block for specified period.  default is no blocking (polling)
         struct timeval timeout;
         timeout.tv_sec = blockTime / 1000;
@@ -589,10 +607,10 @@ int ServerLink::fillTcpReadBuffer(int blockTime)
                             blockTime > 0 ? &timeout : NULL);
         if (nfound < 0)
             return -1;
-#endif
     }
 
     int rlen = recv(fd, &tbuf[tcpBufferPos], emptySpace, 0);
+#endif
     if (rlen < 0)
     {
         if (errno == EAGAIN)

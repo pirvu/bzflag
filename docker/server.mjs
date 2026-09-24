@@ -97,7 +97,7 @@ function buildIndexHtml() {
     align-items: center; justify-content: center; background: #1a1a2e; color: #e0e0e0; z-index: 10;
   }
   #restart-screen h1 { font-size: 2rem; margin-bottom: 1.5rem; color: #fff; }
-  #restart-screen p { margin-bottom: 1.5rem; color: #999; font-size: 0.95rem; }
+  #restart-screen p { margin-bottom: 1.5rem; color: #999; font-size: 0.95rem; max-width: 40rem; text-align: center; }
   #restart-btn {
     padding: 0.75rem 2rem; font-size: 1.1rem; background: #4a9eff; color: #fff;
     border: none; border-radius: 6px; cursor: pointer; font-family: inherit;
@@ -139,7 +139,7 @@ function buildIndexHtml() {
 <!-- Restart screen -->
 <div id="restart-screen">
   <h1>BZFlag</h1>
-  <p>Game ended.</p>
+  <p id="restart-msg">Game ended.</p>
   <button id="restart-btn">Play Again</button>
 </div>
 
@@ -214,7 +214,9 @@ function buildIndexHtml() {
 
   var RealWebSocket = window.WebSocket;
   window.WebSocket = function(url, protocols) {
-    if (typeof url === 'string' && (url.indexOf('localhost') !== -1 || url.indexOf('127.0.0.1') !== -1)) {
+    // Only solo games talk to the in-page mock server; matching on the
+    // hostname would also capture real servers on localhost.
+    if (window.__bzSolo) {
       console.log('[BZFlag] Intercepting WebSocket to ' + url + ' -> mock server');
       var adapter = new MockWebSocketAdapter(window.__bzMockServer);
       adapter.url = url;
@@ -249,6 +251,32 @@ function buildIndexHtml() {
   }
   window.addEventListener('resize', resizeCanvas);
 
+  // Show the end screen with an error message instead of leaving a stuck
+  // loading screen or a black canvas when something goes wrong.
+  var _bzFailed = false;
+  function showFatalError(msg) {
+    if (_bzFailed) return;
+    _bzFailed = true;
+    console.error('[BZFlag] Fatal: ' + msg);
+    var canvas = document.getElementById('canvas');
+    if (canvas) canvas.style.display = 'none';
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('restart-msg').textContent = msg;
+    document.getElementById('restart-screen').style.display = 'flex';
+  }
+  window.addEventListener('error', function(e) {
+    showFatalError('The game crashed: ' + (e.message || 'unknown error'));
+  });
+  window.addEventListener('unhandledrejection', function(e) {
+    showFatalError('The game crashed: ' + (e.reason && e.reason.message || e.reason || 'unknown error'));
+  });
+  function hasWebGL() {
+    try {
+      var c = document.createElement('canvas');
+      return !!(window.WebGLRenderingContext && (c.getContext('webgl') || c.getContext('experimental-webgl')));
+    } catch (e) { return false; }
+  }
+
   window.__bzOnGameExit = function() {
     console.log('[BZFlag] Game exited');
     var c = document.getElementById('canvas');
@@ -276,6 +304,10 @@ function buildIndexHtml() {
   function startGame(solo) {
     var callsign = callsignInput.value.trim();
     if (!callsign) { callsignInput.focus(); return; }
+    if (!hasWebGL()) {
+      showFatalError('Your browser does not support WebGL, which BZFlag needs to run.');
+      return;
+    }
     var team = teamSelect.value;
 
     localStorage.setItem('bzflag-callsign', callsign);
@@ -289,6 +321,7 @@ function buildIndexHtml() {
     var canvas = document.getElementById('canvas');
     var args = ['-window', canvas.width + 'x' + canvas.height, '-time', '12:00:00', '-longitude', '0', '-nolist', '-mute', '-team', team];
 
+    window.__bzSolo = !!solo;
     if (solo) {
       args.push('-solo', '3', callsign + '@localhost');
     } else {
@@ -311,6 +344,7 @@ function buildIndexHtml() {
       },
       print: function(text) { console.log(text); },
       printErr: function(text) { console.warn(text); },
+      onAbort: function(what) { showFatalError('The game stopped unexpectedly: ' + what); },
     };
 
     canvas.addEventListener('click', function() { canvas.focus(); });
@@ -416,6 +450,9 @@ wss.on('connection', (ws, req) => {
   const tcp = createConnection({ host: '127.0.0.1', port: BZFS_PORT }, () => {
     console.log(`[ws] TCP connected to bzfs:${BZFS_PORT}`);
   });
+  // Game updates are small, latency-sensitive messages: don't let Nagle
+  // batch them.
+  tcp.setNoDelay(true);
 
   tcp.on('data', (data) => {
     if (ws.readyState === 1) ws.send(data);

@@ -135,6 +135,13 @@ if(EMSCRIPTEN)
         "SHELL:-s FETCH=1"
         "SHELL:-s WEBSOCKET_URL=\"ws://\""
         "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/data@/data"
+        # Sounds are unused while the web shell passes -mute; the rest are
+        # build and desktop-integration files. Drop the *.wav exclusion
+        # when audio support lands.
+        "SHELL:--exclude-file *.wav"
+        "SHELL:--exclude-file *.am"
+        "SHELL:--exclude-file *.desktop"
+        "SHELL:--exclude-file *.xpm"
         "SHELL:--shell-file ${CMAKE_SOURCE_DIR}/web/shell.html"
     )
     set_target_properties(bzflag PROPERTIES SUFFIX ".html")

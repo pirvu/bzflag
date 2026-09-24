@@ -168,17 +168,33 @@ void gluDisk(GLUquadric*, GLdouble, GLdouble, GLint, GLint) {}
 void gluCylinder(GLUquadric*, GLdouble, GLdouble, GLdouble, GLint, GLint) {}
 void gluSphere(GLUquadric*, GLdouble, GLint, GLint) {}
 
-// gluProject — minimal identity-like fallback so call sites in HUDRenderer
-// at least compile and run without a crash. Real projection math lives in
-// BZFlag's own matrix utilities too; these stubs just keep the link valid.
+// gluProject — same math as the reference GLU implementation:
+// window = viewport(project(proj * model * obj)).
 GLint gluProject(GLdouble objX, GLdouble objY, GLdouble objZ,
-                 const GLdouble* /*model*/, const GLdouble* /*proj*/,
+                 const GLdouble* model, const GLdouble* proj,
                  const GLint* view,
                  GLdouble* winX, GLdouble* winY, GLdouble* winZ)
 {
-    if (winX) *winX = objX + (view ? view[0] : 0);
-    if (winY) *winY = objY + (view ? view[1] : 0);
-    if (winZ) *winZ = objZ;
+    // matrices are column-major: m[col * 4 + row]
+    const GLdouble in[4] = { objX, objY, objZ, 1.0 };
+    GLdouble eye[4], clip[4];
+    for (int r = 0; r < 4; r++)
+        eye[r] = model[r] * in[0] + model[4 + r] * in[1]
+                 + model[8 + r] * in[2] + model[12 + r] * in[3];
+    for (int r = 0; r < 4; r++)
+        clip[r] = proj[r] * eye[0] + proj[4 + r] * eye[1]
+                  + proj[8 + r] * eye[2] + proj[12 + r] * eye[3];
+    if (clip[3] == 0.0)
+        return GL_FALSE;
+
+    // normalized device coordinates in [-1, 1], mapped to [0, 1]
+    const GLdouble x = clip[0] / clip[3] * 0.5 + 0.5;
+    const GLdouble y = clip[1] / clip[3] * 0.5 + 0.5;
+    const GLdouble z = clip[2] / clip[3] * 0.5 + 0.5;
+
+    *winX = view[0] + x * view[2];
+    *winY = view[1] + y * view[3];
+    *winZ = z;
     return GL_TRUE;
 }
 
