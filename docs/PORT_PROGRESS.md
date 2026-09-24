@@ -28,7 +28,12 @@ Browser: [WASM Client] <-> [JS Mock Server (in-page)] <-> [MockWebSocketAdapter]
 ```
 
 ### Known limitations
-- Tank rendering has minor visual artifacts (GL emulation stride workaround)
+- Vertex arrays: Emscripten's GL emulation only has a fast path for
+  arrays that share one stride; separate arrays are re-strided in JS and
+  their saved pointers overwritten. Static geometry (tanks, meshes) now
+  lives in interleaved vertex buffers (`OpenGLVertexBuffer`), and only
+  `GL_VERTEX_ARRAY` is enabled by default: every array draw enables what
+  it needs and restores that default.
 - No audio (muted for stability)
 - Boundary walls visible but very tall
 
@@ -97,6 +102,7 @@ docker run -p 8080:8080 bzflag-multiplayer
 
 ### New files (Emscripten stubs)
 - `src/ogl/EmscriptenStubs.cxx` — GL no-ops (display lists, GLU, texgen, etc.)
+- `src/ogl/OpenGLVertexBuffer.cxx` — Interleaved static vertex buffers (display list replacement)
 - `src/common/cURLManager_stub.cxx` — HTTP stub
 - `src/net/AresHandler_stub.cxx`, `Ping_stub.cxx`, `multicast_stub.cxx`
 
@@ -116,10 +122,10 @@ docker run -p 8080:8080 bzflag-multiplayer
 - `src/bzflag/ServerLink.cxx` — WebSocket transport, emscripten_sleep
 - `src/bzflag/ServerStartMenu.cxx` — Skip fork/exec
 - `src/3D/TextureFont.cxx` — Direct glyph render
-- `src/geometry/TankGeometryMgr.cxx` — Direct render, consistent stride
+- `src/geometry/TankGeometryMgr.cxx` — Parts recorded once into vertex buffers
 - `src/geometry/TankSceneNode.cxx` — renderPart for Emscripten
-- `src/geometry/MeshFragSceneNode.cxx`, `MeshDrawMgr.cxx` — Fallback paths
-- `src/geometry/FlagSceneNode.cxx` — executeNoList
+- `src/geometry/MeshFragSceneNode.cxx`, `MeshDrawMgr.cxx` — Vertex buffers, 16-bit triangle indices
+- `src/geometry/FlagSceneNode.cxx` — executeNoList with interleaved arrays
 - `src/platform/SDL2Window.cxx`, `SDL2Display.cxx` — Platform stubs
 - `src/game/DirectoryNames.cxx` — Browser paths
 

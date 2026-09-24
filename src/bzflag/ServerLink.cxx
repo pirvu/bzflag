@@ -171,19 +171,20 @@ ServerLink::ServerLink(const Address& serverAddress, int port) :
     memcpy((unsigned char *)&usendaddr,(unsigned char *)&addr, sizeof(addr));
 
     bool okay = true;
+#if !defined(__EMSCRIPTEN__)
+    // the browser build polls with emscripten_sleep() instead of select()
     int fdMax = query;
     struct timeval timeout;
     fd_set write_set;
     fd_set read_set;
     int nfound;
+#endif
 
 #if defined(__EMSCRIPTEN__)
     // Emscripten's socket emulation maps TCP connect() onto a WebSocket.
     // connect() returns 0 immediately (optimistically) before the WS
-    // handshake completes. We must yield to the browser event loop so
-    // the WebSocket can finish its handshake before we send/recv.
+    // handshake completes.
     okay = true;
-    fdMax = query;
     logDebugMessage(2, "CONNECT: Emscripten connect to %s:%d (fd=%d)\n",
                     inet_ntoa(addr.sin_addr), port, query);
     {

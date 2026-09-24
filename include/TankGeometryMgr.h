@@ -121,6 +121,11 @@ float getTreadScale();
 // texcoords
 float getTreadTexLen();
 
+// primitives; glBegin()/glEnd() natively, recorded into vertex buffers
+// under Emscripten
+void doBegin(GLenum mode);
+void doEnd();
+
 // help to scale vertices and normals
 void doVertex3f(GLfloat x, GLfloat y, GLfloat z);
 void doNormal3f(GLfloat x, GLfloat y, GLfloat z);

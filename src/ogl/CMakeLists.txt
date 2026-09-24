@@ -9,7 +9,7 @@ set(GLKIT_SOURCES
 )
 
 if(EMSCRIPTEN)
-    list(APPEND GLKIT_SOURCES EmscriptenStubs.cxx)
+    list(APPEND GLKIT_SOURCES EmscriptenStubs.cxx OpenGLVertexBuffer.cxx)
 endif()
 
 add_library(BZFlag_GLKit STATIC ${GLKIT_SOURCES})

@@ -17,7 +17,7 @@ int TankGeometryUtils::buildLowBody ( void )
 {
     glShadeModel(GL_FLAT);
 
-    glBegin(GL_TRIANGLE_STRIP);
+    doBegin(GL_TRIANGLE_STRIP);
     doNormal3f(0.023598f, 0.000000f, 0.999722f);
     doTexCoord2f(1.360f, 1.970f);
     doVertex3f(2.575f, -0.877f, 1.111f);
@@ -42,7 +42,7 @@ int TankGeometryUtils::buildLowBody ( void )
     doVertex3f(2.575f, -0.877f, 1.111f);
     doTexCoord2f(0.822f, 1.710f);
     doVertex3f(2.575f, 0.877f, 1.111f);
-    glEnd();
+    doEnd();
 
     return 8;
 }

@@ -23,6 +23,7 @@
 
 // Global headers
 #include "BzMaterial.h"
+#include "OpenGLVertexBuffer.h"
 
 //
 // NOTES:
@@ -81,6 +82,9 @@ protected:
     private:
         int style;
         GLuint list;
+#ifdef __EMSCRIPTEN__
+        mutable OpenGLVertexBuffer vbo; // uploaded lazily on first draw
+#endif
         MeshFragSceneNode &sceneNode;
     };
 
