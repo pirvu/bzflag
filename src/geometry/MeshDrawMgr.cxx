@@ -19,6 +19,10 @@
 #include "MeshDrawInfo.h"
 #include "bzfio.h" // for DEBUGx()
 
+#ifdef __EMSCRIPTEN__
+#include <algorithm>
+#endif
+
 
 MeshDrawMgr::MeshDrawMgr(const MeshDrawInfo* drawInfo_)
     : drawInfo(drawInfo_)
@@ -77,6 +81,134 @@ inline void MeshDrawMgr::rawExecuteCommands(int lod, int set)
 }
 
 
+#ifdef __EMSCRIPTEN__
+static unsigned int getIndex(const DrawCmd& cmd, int i)
+{
+    if (cmd.indexType == DrawCmd::DrawIndexUShort)
+        return ((const GLushort*)cmd.indices)[i];
+    return ((const GLuint*)cmd.indices)[i];
+}
+
+
+// convert one draw command to 16-bit indices, turning every polygon mode
+// into GL_TRIANGLES
+static void convertCmd(const DrawCmd& cmd, std::vector<GLushort>& tris,
+                       std::vector<GLushort>& other)
+{
+    const int n = cmd.count;
+    auto tri = [&](int a, int b, int c)
+    {
+        tris.push_back((GLushort)getIndex(cmd, a));
+        tris.push_back((GLushort)getIndex(cmd, b));
+        tris.push_back((GLushort)getIndex(cmd, c));
+    };
+    switch (cmd.drawMode)
+    {
+    case DrawCmd::DrawTriangles:
+        for (int i = 0; i + 2 < n; i += 3)
+            tri(i, i + 1, i + 2);
+        break;
+    case DrawCmd::DrawTriangleStrip:
+        for (int i = 0; i + 2 < n; i++)
+        {
+            if (i & 1)
+                tri(i + 1, i, i + 2);
+            else
+                tri(i, i + 1, i + 2);
+        }
+        break;
+    case DrawCmd::DrawTriangleFan:
+    case DrawCmd::DrawPolygon:
+        for (int i = 1; i + 1 < n; i++)
+            tri(0, i, i + 1);
+        break;
+    case DrawCmd::DrawQuads:
+        for (int i = 0; i + 3 < n; i += 4)
+        {
+            tri(i, i + 1, i + 2);
+            tri(i, i + 2, i + 3);
+        }
+        break;
+    case DrawCmd::DrawQuadStrip:
+        for (int i = 0; i + 3 < n; i += 2)
+        {
+            tri(i, i + 1, i + 3);
+            tri(i, i + 3, i + 2);
+        }
+        break;
+    default: // points and lines are passed through
+        for (int i = 0; i < n; i++)
+            other.push_back((GLushort)getIndex(cmd, i));
+        break;
+    }
+}
+
+
+void MeshDrawMgr::makeBuffers()
+{
+    indexedSets.clear();
+    vbo.clear();
+
+    // the vertex arrays have no explicit size, use the highest index
+    unsigned int vertexCount = 0;
+    const DrawLod* drawLods = drawInfo->getDrawLods();
+    for (int lod = 0; lod < drawInfo->getLodCount(); lod++)
+        for (int set = 0; set < drawLods[lod].count; set++)
+        {
+            const DrawSet& drawSet = drawLods[lod].sets[set];
+            for (int c = 0; c < drawSet.count; c++)
+                for (int i = 0; i < drawSet.cmds[c].count; i++)
+                    vertexCount = std::max(vertexCount, getIndex(drawSet.cmds[c], i) + 1);
+        }
+    if (vertexCount > 0x10000)
+    {
+        logDebugMessage(1, "MeshDrawMgr: %u vertices do not fit 16-bit indices\n",
+                        vertexCount);
+        return;
+    }
+
+    vbo.set((int)vertexCount,
+            reinterpret_cast<GLfloat const*>(drawInfo->getVertices()),
+            reinterpret_cast<GLfloat const*>(drawInfo->getNormals()),
+            reinterpret_cast<GLfloat const*>(drawInfo->getTexcoords()));
+
+    indexedSets.resize(drawInfo->getLodCount());
+    for (int lod = 0; lod < drawInfo->getLodCount(); lod++)
+    {
+        const DrawLod& drawLod = drawLods[lod];
+        indexedSets[lod].resize(drawLod.count);
+        for (int set = 0; set < drawLod.count; set++)
+        {
+            const DrawSet& drawSet = drawLod.sets[set];
+            IndexedSet& out = indexedSets[lod][set];
+            IndexedCmd tris = { GL_TRIANGLES, {} };
+            for (int c = 0; c < drawSet.count; c++)
+            {
+                const DrawCmd& cmd = drawSet.cmds[c];
+                IndexedCmd other = { cmd.drawMode, {} };
+                convertCmd(cmd, tris.indices, other.indices);
+                if (!other.indices.empty())
+                    out.push_back(std::move(other));
+            }
+            // all polygons of a set go out in a single draw call
+            if (!tris.indices.empty())
+                out.push_back(std::move(tris));
+        }
+    }
+}
+
+
+void MeshDrawMgr::executeBuffered(int lod, int set, bool useNormals, bool useTexcoords)
+{
+    vbo.bind(useNormals, useTexcoords);
+    for (const IndexedCmd& cmd : indexedSets[lod][set])
+        glDrawElements(cmd.mode, (GLsizei)cmd.indices.size(),
+                       GL_UNSIGNED_SHORT, cmd.indices.data());
+    OpenGLVertexBuffer::unbind();
+}
+#endif // __EMSCRIPTEN__
+
+
 void MeshDrawMgr::executeSet(int lod, int set, bool useNormals, bool useTexcoords)
 {
     // FIXME (what is broken?)
@@ -88,6 +220,11 @@ void MeshDrawMgr::executeSet(int lod, int set, bool useNormals, bool useTexcoord
     }
 
     const GLuint list = lodLists[lod][set];
+#ifdef __EMSCRIPTEN__
+    if (!indexedSets.empty())
+        executeBuffered(lod, set, useNormals, useTexcoords);
+    else
+#endif
     if (list != INVALID_GL_LIST_ID)
         glCallList(list);
     else
@@ -98,6 +235,23 @@ void MeshDrawMgr::executeSet(int lod, int set, bool useNormals, bool useTexcoord
 
         glVertexPointer(3, GL_FLOAT, 0, vertices);
 
+#ifdef __EMSCRIPTEN__
+        // only the vertex array is enabled by default here
+        if (useNormals)
+        {
+            glEnableClientState(GL_NORMAL_ARRAY);
+            glNormalPointer(GL_FLOAT, 0, normals);
+        }
+        if (useTexcoords)
+        {
+            glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+            glTexCoordPointer(2, GL_FLOAT, 0, texcoords);
+        }
+
+        rawExecuteCommands(lod, set);
+
+        OpenGLVertexBuffer::unbind();
+#else
         if (useNormals)
             glNormalPointer(GL_FLOAT, 0, normals);
         else
@@ -113,6 +267,7 @@ void MeshDrawMgr::executeSet(int lod, int set, bool useNormals, bool useTexcoord
             glEnableClientState(GL_NORMAL_ARRAY);
         if (!useTexcoords)
             glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+#endif
     }
 
     if (animInfo != nullptr)
@@ -133,6 +288,11 @@ void MeshDrawMgr::executeSetGeometry(int lod, int set)
     }
 
     const GLuint list = lodLists[lod][set];
+#ifdef __EMSCRIPTEN__
+    if (!indexedSets.empty())
+        executeBuffered(lod, set, false, false);
+    else
+#endif
     if (list != INVALID_GL_LIST_ID)
         glCallList(list);
     else
@@ -152,6 +312,9 @@ void MeshDrawMgr::executeSetGeometry(int lod, int set)
 
 void MeshDrawMgr::makeLists()
 {
+#ifdef __EMSCRIPTEN__
+    makeBuffers();
+#else
     GLenum error;
     int errCount = 0;
     // reset the error state
@@ -211,6 +374,7 @@ void MeshDrawMgr::makeLists()
         }
         lod++;
     }
+#endif // __EMSCRIPTEN__
 
     return;
 }
@@ -218,6 +382,10 @@ void MeshDrawMgr::makeLists()
 
 void MeshDrawMgr::freeLists()
 {
+#ifdef __EMSCRIPTEN__
+    vbo.clear();
+    indexedSets.clear();
+#endif
     for (auto &item : lodLists)
         for (auto &itemSet : item)
             if (itemSet != INVALID_GL_LIST_ID)

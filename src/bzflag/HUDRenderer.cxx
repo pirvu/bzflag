@@ -1708,6 +1708,13 @@ void            HUDRenderer::setOneToOnePrj()
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
     glLoadIdentity();
+#ifdef __EMSCRIPTEN__
+    // Emscripten's legacy GL emulation needs explicit state cleanup
+    // for 2D HUD rendering: disable depth test and lighting so that
+    // vertex colors work and quads are not depth-culled.
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_LIGHTING);
+#endif
 }
 
 

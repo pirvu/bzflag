@@ -73,7 +73,15 @@ std::string     getConfigDirName( const char* versionName )
         return customName;
     }
 
-#if defined(_WIN32)
+#if defined(__EMSCRIPTEN__)
+    std::string name("/persistent/bzf/");
+    if (versionName)
+    {
+        name += versionName;
+        name += "/";
+    }
+    return name;
+#elif defined(_WIN32)
     std::string name("C:");
     char dir[MAX_PATH];
     ITEMIDLIST* idl;
@@ -168,8 +176,9 @@ std::string getScreenShotDirName()
 
 std::string getTempDirName()
 {
-// FIXME: needs something for Windows and maybe other platforms
-#if defined(_WIN32)
+#if defined(__EMSCRIPTEN__)
+    std::string name("/persistent/bzf/temp");
+#elif defined(_WIN32)
     std::string name = getConfigDirName();
     name += "temp";
 #else

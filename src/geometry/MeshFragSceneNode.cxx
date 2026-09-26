@@ -64,6 +64,11 @@ void MeshFragSceneNode::Geometry::initDisplayList()
     if (list != INVALID_GL_LIST_ID)
         glDeleteLists(list, 1);
     list = INVALID_GL_LIST_ID;
+#ifdef __EMSCRIPTEN__
+    // no display lists: keep the static geometry in a vertex buffer
+    vbo.set(sceneNode.arrayCount * 3, sceneNode.vertices,
+            sceneNode.normals, sceneNode.texcoords);
+#else
     if (BZDB.isTrue("meshLists"))
     {
         list = glGenLists(1);
@@ -71,6 +76,7 @@ void MeshFragSceneNode::Geometry::initDisplayList()
         drawVTN();
         glEndList();
     }
+#endif
     return;
 }
 
@@ -80,6 +86,9 @@ void MeshFragSceneNode::Geometry::freeDisplayList()
     if (list != INVALID_GL_LIST_ID)
         glDeleteLists(list, 1);
     list = INVALID_GL_LIST_ID;
+#ifdef __EMSCRIPTEN__
+    vbo.release();
+#endif
     return;
 }
 
@@ -98,6 +107,39 @@ void MeshFragSceneNode::Geometry::initContext(void *data)
 }
 
 
+#ifdef __EMSCRIPTEN__
+// the vertex buffer sets exactly the arrays each variant needs
+inline void MeshFragSceneNode::Geometry::drawV() const
+{
+    vbo.bind(false, false);
+    glDrawArrays(GL_TRIANGLES, 0, sceneNode.arrayCount * 3);
+    OpenGLVertexBuffer::unbind();
+}
+
+
+inline void MeshFragSceneNode::Geometry::drawVT() const
+{
+    vbo.bind(false, true);
+    glDrawArrays(GL_TRIANGLES, 0, sceneNode.arrayCount * 3);
+    OpenGLVertexBuffer::unbind();
+}
+
+
+inline void MeshFragSceneNode::Geometry::drawVN() const
+{
+    vbo.bind(true, false);
+    glDrawArrays(GL_TRIANGLES, 0, sceneNode.arrayCount * 3);
+    OpenGLVertexBuffer::unbind();
+}
+
+
+inline void MeshFragSceneNode::Geometry::drawVTN() const
+{
+    vbo.bind(true, true);
+    glDrawArrays(GL_TRIANGLES, 0, sceneNode.arrayCount * 3);
+    OpenGLVertexBuffer::unbind();
+}
+#else
 inline void MeshFragSceneNode::Geometry::drawV() const
 {
     glDisableClientState(GL_NORMAL_ARRAY);
@@ -150,6 +192,7 @@ inline void MeshFragSceneNode::Geometry::drawVTN() const
 
     return;
 }
+#endif // __EMSCRIPTEN__
 
 
 void MeshFragSceneNode::Geometry::render()
@@ -199,8 +242,14 @@ void MeshFragSceneNode::Geometry::renderShadow()
         glCallList(list);
     else
     {
+#ifdef __EMSCRIPTEN__
+        vbo.bind(false, false);
+        glDrawArrays(GL_TRIANGLES, 0, triangles * 3);
+        OpenGLVertexBuffer::unbind();
+#else
         glVertexPointer(3, GL_FLOAT, 0, sceneNode.vertices);
         glDrawArrays(GL_TRIANGLES, 0, triangles * 3);
+#endif
     }
     addTriangleCount(triangles);
     return;

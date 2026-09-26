@@ -16,7 +16,7 @@ using namespace TankGeometryUtils;
 int TankGeometryUtils::buildLowBarrel ( void )
 {
     glShadeModel(GL_SMOOTH);
-    glBegin(GL_TRIANGLE_STRIP);
+    doBegin(GL_TRIANGLE_STRIP);
     doNormal3f(0.0f, -1.0f, 0.0f);
     doVertex3f(1.570f, -0.18f, 1.530f);
     doVertex3f(4.940f, -0.126f, 1.530f);
@@ -32,16 +32,16 @@ int TankGeometryUtils::buildLowBarrel ( void )
     doNormal3f(0.0f, -1.0f, 0.0f);
     doVertex3f(1.570f, -0.18f, 1.530f);
     doVertex3f(4.940f, -0.126f, 1.530f);
-    glEnd(); // 10 verts -> 8 tris
+    doEnd(); // 10 verts -> 8 tris
 
     glShadeModel(GL_FLAT);
-    glBegin(GL_TRIANGLE_FAN);
+    doBegin(GL_TRIANGLE_FAN);
     doNormal3f(1.000000f, 0.000000f, 0.000000f);
     doVertex3f(4.940f, 0.0f, 1.410f);
     doVertex3f(4.940f, 0.126f, 1.530f);
     doVertex3f(4.940f, 0.0f, 1.660f);
     doVertex3f(4.940f, -0.126f, 1.530f);
-    glEnd(); // 4 verts -> 2 tris
+    doEnd(); // 4 verts -> 2 tris
 
     return 10;
 }

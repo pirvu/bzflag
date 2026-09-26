@@ -79,6 +79,16 @@ private:
     void        doInitDisplayLists();
     void        setSkyColors();
     void        makeCelestialLists(const SceneRenderer&);
+
+    void        renderSunDisk();
+    void        renderStarPoints();
+    void        renderSimpleGroundQuad();
+    void        renderSimpleGroundTextured();
+    void        renderCloudsBody();
+    void        renderMountainStrip(int texIndex);
+    void        renderSunTransformed();
+    void        renderMoonBody();
+    void        renderStarsTransformed(const SceneRenderer& renderer);
     static void     freeContext(void*);
     static void     initContext(void*);
     static void     bzdbCallback(const std::string&, void*);

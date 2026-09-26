@@ -145,6 +145,21 @@ void OpenGLTexture::initContext()
     // compute next mipmap from current mipmap to save time.
     setFilter(filter);
     glBindTexture(GL_TEXTURE_2D, list);
+#ifdef __EMSCRIPTEN__
+    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat,
+                 scaledWidth, scaledHeight,
+                 0, internalFormat, GL_UNSIGNED_BYTE, image);
+    // WebGL 1 only supports mipmaps on power-of-two textures
+    if ((scaledWidth & (scaledWidth - 1)) == 0 && (scaledHeight & (scaledHeight - 1)) == 0)
+        glGenerateMipmap(GL_TEXTURE_2D);
+    else
+    {
+        // NPOT: clamp to edge and use linear filtering (no mipmaps)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    }
+#else
     if (GLEW_VERSION_1_4)
     {
         glTexParameteri(GL_TEXTURE_2D, GL_GENERATE_MIPMAP, GL_TRUE);
@@ -158,6 +173,7 @@ void OpenGLTexture::initContext()
                           scaledWidth, scaledHeight,
                           internalFormat, GL_UNSIGNED_BYTE, image);
     }
+#endif
     glBindTexture(GL_TEXTURE_2D, 0);
 
     return;
@@ -166,6 +182,10 @@ void OpenGLTexture::initContext()
 
 void OpenGLTexture::setupImage(const GLubyte* pixels)
 {
+#ifdef __EMSCRIPTEN__
+    scaledWidth = width;
+    scaledHeight = height;
+#else
     if (GLEW_ARB_texture_non_power_of_two)
     {
         scaledWidth = width;
@@ -203,6 +223,7 @@ void OpenGLTexture::setupImage(const GLubyte* pixels)
         if (scaledHeight > maxTextureSize)
             scaledHeight = maxTextureSize;
     }
+#endif
 
     // copy the data into a 4-byte aligned buffer
     GLubyte* unaligned = new GLubyte[4 * width * height + 4];
@@ -212,6 +233,10 @@ void OpenGLTexture::setupImage(const GLubyte* pixels)
     // scale the image if required
     if ((scaledWidth != width) || (scaledHeight != height))
     {
+#ifdef __EMSCRIPTEN__
+        scaledWidth = width;
+        scaledHeight = height;
+#else
         GLubyte* unalignedScaled = new GLubyte[4 * scaledWidth * scaledHeight + 4];
         GLubyte* alignedScaled = (GLubyte*)(((unsigned long)unalignedScaled & ~3) + 4);
 
@@ -224,6 +249,7 @@ void OpenGLTexture::setupImage(const GLubyte* pixels)
         aligned = alignedScaled;
         logDebugMessage(1,"Scaling texture from %ix%i to %ix%i\n",
                         width, height, scaledWidth, scaledHeight);
+#endif
     }
 
     // set the image
@@ -372,9 +398,38 @@ void OpenGLTexture::getBestFormat()
     }
 
     // pick internal format
+#ifdef __EMSCRIPTEN__
+    // WebGL 2 core profile doesn't support GL_LUMINANCE / GL_LUMINANCE_ALPHA.
+    // Expand luminance data back to RGB/RGBA so we can use standard formats.
+    if (useLuminance)
+    {
+        // Re-expand: luminance data was packed to 1 byte per pixel.
+        // We need to expand it back to RGB(A).
+        const int size = scaledWidth * scaledHeight;
+        const int dstBpp = alpha ? 4 : 3;
+        GLubyte* expanded = new GLubyte[size * dstBpp];
+        GLubyte* src = image;
+        GLubyte* dst = expanded;
+        for (int j = 0; j < size; j++)
+        {
+            GLubyte lum = *src++;
+            *dst++ = lum;
+            *dst++ = lum;
+            *dst++ = lum;
+            if (alpha)
+                *dst++ = *src++;
+        }
+        // Copy expanded data back to image buffer
+        memcpy(image, expanded, size * dstBpp);
+        delete[] expanded;
+        useLuminance = false; // now using RGB/RGBA
+    }
+    internalFormat = alpha ? GL_RGBA : GL_RGB;
+#else
     internalFormat = useLuminance ?
                      (alpha ? GL_LUMINANCE_ALPHA : GL_LUMINANCE) :
                      (alpha ? GL_RGBA : GL_RGB);
+#endif
 }
 
 

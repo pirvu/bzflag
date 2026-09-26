@@ -82,7 +82,8 @@ struct CmdLineOptions
           filterFilename(""), filterCallsigns(false), filterChat(false), filterSimple(false),
           banTime(300), voteTime(60), vetoTime(2), votesRequired(2),
           votePercentage(50.1f), voteRepeatTime(300),
-          autoTeam(false), citySize(5), cacheURL(""), cacheOut(""), tkAnnounce(false), wallSides(4)
+          autoTeam(false), citySize(5), cacheURL(""), cacheOut(""), tkAnnounce(false), wallSides(4),
+          requireUDP(true)
     {
         int i;
         for (FlagTypeMap::iterator it = FlagType::getFlagMap().begin();
@@ -173,6 +174,7 @@ struct CmdLineOptions
     bool          timestampMicros;
     bool          timestampUTC;
     bool          countdownPaused;
+    bool          requireUDP;
 
     uint16_t      maxTeam[NumTeams];
     FlagNumberMap     flagCount;

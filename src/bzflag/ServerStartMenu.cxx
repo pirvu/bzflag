@@ -356,6 +356,17 @@ void ServerStartMenu::dismiss()
 
 void ServerStartMenu::execute()
 {
+#ifdef __EMSCRIPTEN__
+    // In browser mode, use the in-page JS mock server instead of fork/exec.
+    {
+        StartupInfo* info = getStartupInfo();
+        strcpy(info->serverName, "localhost");
+        info->serverPort = 5154;
+        setStatus("Starting mock server...");
+    }
+    return;
+#endif
+
     static const char*    serverApp = "bzfs";
     bool success = false;
 

@@ -932,6 +932,10 @@ void parse(int argc, char **argv, CmdLineOptions &options, bool fromWorldFile)
             checkFromWorldFile(argv[i], fromWorldFile);
             options.suppressMasterBanList = true;
         }
+        else if (strcmp(argv[i],"-noudp") == 0)
+        {
+            options.requireUDP = false;
+        }
         else if (strcmp(argv[i],"-noradar") == 0)
             BZDB.set(StateDatabase::BZDB_RADARLIMIT, "-1.0");
         else if (strcmp(argv[i],"-masterBanURL") == 0)

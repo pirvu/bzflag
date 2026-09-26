@@ -21,12 +21,17 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string>
+#include <string.h>
 
 // common implementation headers
 #include "SceneRenderer.h"
 #include "StateDatabase.h"
 #include "BZDBCache.h"
 #include "OpenGLGState.h"
+#ifdef __EMSCRIPTEN__
+#include <vector>
+#include "OpenGLVertexBuffer.h"
+#endif
 
 
 // use the namespaces
@@ -60,6 +65,21 @@ static const float* currentScaleFactor = scaleFactors[Normal];
 
 // the current shadow mode (used to remove glNormal3f and glTexcoord2f calls)
 static TankShadow shadowMode = ShadowOn;
+
+#ifdef __EMSCRIPTEN__
+// No display lists under WebGL: each part is recorded once into a vertex
+// buffer as a triangle list. Shadows draw the same buffer without normals
+// and texcoords, so there is no shadow dimension.
+static OpenGLVertexBuffer partBuffers[LastTankLOD][LastTankSize][LastTankPart];
+static bool buffersBuilt = false;
+
+// recording state
+static std::vector<GLfloat>* recordTarget = NULL; // triangles of the part
+static std::vector<GLfloat> recordPrim;           // current primitive
+static GLenum recordMode = GL_TRIANGLES;
+static GLfloat recordNormal[3] = {0.0f, 0.0f, 1.0f};
+static GLfloat recordTexcoord[2] = {0.0f, 0.0f};
+#endif
 
 // arrays of functions to avoid large switch statements
 typedef int (*partFunction)(void);
@@ -156,6 +176,13 @@ void TankGeometryMgr::kill()
 
 void TankGeometryMgr::deleteLists()
 {
+#ifdef __EMSCRIPTEN__
+    for (int lod = 0; lod < LastTankLOD; lod++)
+        for (int size = 0; size < LastTankSize; size++)
+            for (int part = 0; part < LastTankPart; part++)
+                partBuffers[lod][size][part].clear();
+    buffersBuilt = false;
+#endif
     // delete the lists that have been aquired
     for (int shadow = 0; shadow < LastTankShadow; shadow++)
     {
@@ -187,6 +214,7 @@ void TankGeometryMgr::buildLists()
     // setup the scale factors
     setupScales();
     currentScaleFactor = scaleFactors[Normal];
+
     const bool animated = BZDBCache::animatedTreads;
 
     // setup the quality level
@@ -207,6 +235,15 @@ void TankGeometryMgr::buildLists()
 
     for (int shadow = 0; shadow < LastTankShadow; shadow++)
     {
+#ifdef __EMSCRIPTEN__
+        // shadows reuse the ShadowOff buffers
+        if (shadow != ShadowOff)
+        {
+            memcpy(partTriangles[shadow], partTriangles[ShadowOff],
+                   sizeof(partTriangles[shadow]));
+            continue;
+        }
+#endif
         for (int lod = 0; lod < LastTankLOD; lod++)
         {
             for (int size = 0; size < LastTankSize; size++)
@@ -228,9 +265,15 @@ void TankGeometryMgr::buildLists()
                     GLuint& list = displayLists[shadow][lod][size][part];
                     int& count = partTriangles[shadow][lod][size][part];
 
+#ifdef __EMSCRIPTEN__
+                    (void)list;
+                    std::vector<GLfloat> triangles;
+                    recordTarget = &triangles;
+#else
                     // get a new OpenGL display list
                     list = glGenLists(1);
                     glNewList(list, GL_COMPILE);
+#endif
 
                     // setup the scale factor
                     currentScaleFactor = scaleFactors[size];
@@ -265,13 +308,22 @@ void TankGeometryMgr::buildLists()
                         }
                     }
 
+#ifdef __EMSCRIPTEN__
+                    recordTarget = NULL;
+                    partBuffers[lod][size][part].setInterleaved(triangles);
+#else
                     // end of the list
                     glEndList();
+#endif
 
                 } // part
             } // size
         } // lod
     } // shadow
+
+#ifdef __EMSCRIPTEN__
+    buffersBuilt = true;
+#endif
 
     return;
 }
@@ -299,6 +351,30 @@ int TankGeometryMgr::getPartTriangleCount(TankGeometryEnums::TankShadow sh,
 
     return partTriangles[sh][lod][size][part];
 }
+
+
+#ifdef __EMSCRIPTEN__
+void TankGeometryMgr::renderPart(TankShadow shadow,
+                                 TankPart part,
+                                 TankSize size,
+                                 TankLOD lod)
+{
+    if ((part == Barrel) && (lod == MedTankLOD))
+        lod = LowTankLOD;
+
+    if (!buffersBuilt)
+        buildLists();
+
+    OpenGLVertexBuffer& buffer = partBuffers[lod][size][part];
+    if (buffer.getCount() == 0)
+        return;
+
+    const bool full = (shadow == ShadowOff);
+    buffer.bind(full, full);
+    glDrawArrays(GL_TRIANGLES, 0, buffer.getCount());
+    OpenGLVertexBuffer::unbind();
+}
+#endif // __EMSCRIPTEN__
 
 
 const float* TankGeometryMgr::getScaleFactor(TankSize size)
@@ -381,6 +457,114 @@ static void setupScales()
 // ---------------------------
 
 
+#ifdef __EMSCRIPTEN__
+void TankGeometryUtils::doBegin(GLenum mode)
+{
+    recordMode = mode;
+    recordPrim.clear();
+}
+
+
+// append vertex i of the current primitive to the part's triangle list
+static void emitVertex(size_t i)
+{
+    const GLfloat* v = &recordPrim[i * OpenGLVertexBuffer::FloatsPerVertex];
+    recordTarget->insert(recordTarget->end(), v,
+                         v + OpenGLVertexBuffer::FloatsPerVertex);
+}
+
+
+void TankGeometryUtils::doEnd()
+{
+    if (recordTarget == NULL)
+        return;
+    const size_t n = recordPrim.size() / OpenGLVertexBuffer::FloatsPerVertex;
+    for (size_t i = 0; i + 2 < n; )
+    {
+        switch (recordMode)
+        {
+        case GL_TRIANGLES:
+            emitVertex(i);
+            emitVertex(i + 1);
+            emitVertex(i + 2);
+            i += 3;
+            break;
+        case GL_TRIANGLE_STRIP:
+            // keep the winding consistent on odd triangles
+            emitVertex((i & 1) ? i + 1 : i);
+            emitVertex((i & 1) ? i : i + 1);
+            emitVertex(i + 2);
+            i++;
+            break;
+        case GL_TRIANGLE_FAN:
+            emitVertex(0);
+            emitVertex(i + 1);
+            emitVertex(i + 2);
+            i++;
+            break;
+        default:
+            i = n;
+            break;
+        }
+    }
+    recordPrim.clear();
+}
+
+
+void TankGeometryUtils::doVertex3f(GLfloat x, GLfloat y, GLfloat z)
+{
+    if (recordTarget == NULL)
+        return;
+    const float* scale = currentScaleFactor;
+    const GLfloat v[OpenGLVertexBuffer::FloatsPerVertex] =
+    {
+        x * scale[0], y * scale[1], z * scale[2],
+        recordNormal[0], recordNormal[1], recordNormal[2],
+        recordTexcoord[0], recordTexcoord[1]
+    };
+    recordPrim.insert(recordPrim.end(), v, v + OpenGLVertexBuffer::FloatsPerVertex);
+}
+
+
+void TankGeometryUtils::doNormal3f(GLfloat x, GLfloat y, GLfloat z)
+{
+    const float* scale = currentScaleFactor;
+    GLfloat sx = x * scale[0];
+    GLfloat sy = y * scale[1];
+    GLfloat sz = z * scale[2];
+    const GLfloat d = sqrtf ((sx * sx) + (sy * sy) + (sz * sz));
+    if (d > 1.0e-5f)
+    {
+        x *= scale[0] / d;
+        y *= scale[1] / d;
+        z *= scale[2] / d;
+    }
+    recordNormal[0] = x;
+    recordNormal[1] = y;
+    recordNormal[2] = z;
+}
+
+
+void TankGeometryUtils::doTexCoord2f(GLfloat x, GLfloat y)
+{
+    recordTexcoord[0] = x;
+    recordTexcoord[1] = y;
+}
+
+#else // __EMSCRIPTEN__
+
+void TankGeometryUtils::doBegin(GLenum mode)
+{
+    glBegin(mode);
+}
+
+
+void TankGeometryUtils::doEnd()
+{
+    glEnd();
+}
+
+
 void TankGeometryUtils::doVertex3f(GLfloat x, GLfloat y, GLfloat z)
 {
     const float* scale = currentScaleFactor;
@@ -419,6 +603,8 @@ void TankGeometryUtils::doTexCoord2f(GLfloat x, GLfloat y)
     glTexCoord2f(x, y);
     return;
 }
+
+#endif // __EMSCRIPTEN__
 
 
 // Local Variables: ***

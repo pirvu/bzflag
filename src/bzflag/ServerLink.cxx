@@ -28,6 +28,9 @@
 #include <unistd.h>
 #include <errno.h>
 #endif
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -81,6 +84,42 @@ DWORD WINAPI ThreadConnect(LPVOID params)
 // FIXME -- packet recording
 FILE* packetStream = NULL;
 TimeKeeper packetStartTime;
+#ifdef __EMSCRIPTEN__
+// Browser sockets never block and select() doesn't yield to the browser
+// event loop, so poll with emscripten_sleep() until exactly len bytes have
+// arrived. Data may be split across several WebSocket frames.
+// Returns len on success, 0 if the server closed the connection, -1 on
+// error or timeout.
+static int emscriptenRecvAll(int fd, char* buf, int len, double timeout)
+{
+    int got = 0;
+    const double start = TimeKeeper::getCurrent().getSeconds();
+    while (got < len)
+    {
+        int r = recv(fd, buf + got, len - got, 0);
+        if (r > 0)
+        {
+            got += r;
+            continue;
+        }
+        if (r == 0)
+            return 0;
+        if (errno != EAGAIN && errno != EWOULDBLOCK)
+        {
+            logDebugMessage(1, "CONNECT:recv error %d\n", errno);
+            return -1;
+        }
+        if (TimeKeeper::getCurrent().getSeconds() - start > timeout)
+        {
+            logDebugMessage(1, "CONNECT:timeout after %d of %d bytes\n", got, len);
+            return -1;
+        }
+        emscripten_sleep(10);
+    }
+    return got;
+}
+#endif
+
 static const unsigned long serverPacket = 1;
 static const unsigned long endPacket = 0;
 
@@ -132,13 +171,35 @@ ServerLink::ServerLink(const Address& serverAddress, int port) :
     memcpy((unsigned char *)&usendaddr,(unsigned char *)&addr, sizeof(addr));
 
     bool okay = true;
+#if !defined(__EMSCRIPTEN__)
+    // the browser build polls with emscripten_sleep() instead of select()
     int fdMax = query;
     struct timeval timeout;
     fd_set write_set;
     fd_set read_set;
     int nfound;
+#endif
 
-#if !defined(_WIN32)
+#if defined(__EMSCRIPTEN__)
+    // Emscripten's socket emulation maps TCP connect() onto a WebSocket.
+    // connect() returns 0 immediately (optimistically) before the WS
+    // handshake completes.
+    okay = true;
+    logDebugMessage(2, "CONNECT: Emscripten connect to %s:%d (fd=%d)\n",
+                    inet_ntoa(addr.sin_addr), port, query);
+    {
+        int cr = connect(query, (CNCTType*)&addr, sizeof(addr));
+        if (cr < 0)
+        {
+            logDebugMessage(1, "CONNECT: connect failed (errno=%d)\n", errno);
+            close(query);
+            return;
+        }
+    }
+    // No need to wait for the WebSocket to open here: sends made while it is
+    // still connecting are queued by the socket layer, and the version read
+    // below polls with emscripten_sleep() until the reply arrives.
+#elif !defined(_WIN32)
     okay = true;
     fdMax = query;
     if (BzfNetwork::setNonBlocking(query) < 0)
@@ -210,6 +271,16 @@ ServerLink::ServerLink(const Address& serverAddress, int port) :
 
     logDebugMessage(2,"CONNECT:send in connect returned %d\n",sendRepply);
 
+#ifdef __EMSCRIPTEN__
+    // the connect header was queued by the socket layer if the WebSocket
+    // is still opening; wait for the full 8-byte version reply
+    i = emscriptenRecvAll(query, version, 8, 15.0);
+    if (i <= 0)
+    {
+        close(query);
+        return;
+    }
+#else
     // wait to get data back. we are still blocking so these
     // calls should be sync.
 
@@ -271,6 +342,7 @@ ServerLink::ServerLink(const Address& serverAddress, int port) :
     }
 
     logDebugMessage(2,"CONNECT:connect loop count = %d\n",loopCount);
+#endif
 
     // if we got back less than the expected connect response (BZFSXXXX)
     // then something went bad, and we are done.
@@ -313,6 +385,14 @@ ServerLink::ServerLink(const Address& serverAddress, int port) :
     }
 
     // read local player's id
+#if defined(__EMSCRIPTEN__)
+    i = emscriptenRecvAll(query, (char *) &id, sizeof(id), 5.0);
+    if (i < (int) sizeof(id))
+    {
+        close(query);
+        return;
+    }
+#else
 #if !defined(_WIN32)
     FD_ZERO(&read_set);
     FD_SET((unsigned int)query, &read_set);
@@ -328,6 +408,7 @@ ServerLink::ServerLink(const Address& serverAddress, int port) :
     i = recv(query, (char *) &id, sizeof(id), 0);
     if (i < (int) sizeof(id))
         return;
+#endif // __EMSCRIPTEN__
     if (id == 0xff)
     {
         state = Rejected;
@@ -497,6 +578,21 @@ int ServerLink::fillTcpReadBuffer(int blockTime)
     if (!emptySpace)
         return 0;
 
+#if defined(__EMSCRIPTEN__)
+    // Browser sockets never block and select() doesn't yield to the browser
+    // event loop. Poll first; only if nothing is queued, yield with
+    // emscripten_sleep() for at most the requested time (capped so an
+    // indefinite wait still re-polls regularly) and poll again.
+    int rlen = recv(fd, &tbuf[tcpBufferPos], emptySpace, 0);
+    if (rlen < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) && blockTime)
+    {
+        emscripten_sleep(blockTime > 0 && blockTime < 50 ? blockTime : 50);
+        rlen = recv(fd, &tbuf[tcpBufferPos], emptySpace, 0);
+    }
+    // recv() returning 0 means the WebSocket was closed by the server
+    if (rlen == 0)
+        return -1;
+#else
     if (blockTime)
     {
         // block for specified period.  default is no blocking (polling)
@@ -515,6 +611,7 @@ int ServerLink::fillTcpReadBuffer(int blockTime)
     }
 
     int rlen = recv(fd, &tbuf[tcpBufferPos], emptySpace, 0);
+#endif
     if (rlen < 0)
     {
         if (errno == EAGAIN)

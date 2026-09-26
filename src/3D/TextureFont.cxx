@@ -39,6 +39,7 @@ TextureFont::TextureFont()
 
 TextureFont::~TextureFont()
 {
+#ifndef __EMSCRIPTEN__
     for (int i = 0; i < MAX_TEXTURE_FONT_CHARS; i++)
     {
         if (listIDs[i] != INVALID_GL_LIST_ID)
@@ -47,6 +48,7 @@ TextureFont::~TextureFont()
             listIDs[i] = INVALID_GL_LIST_ID;
         }
     }
+#endif
 }
 
 void TextureFont::build(void)
@@ -77,51 +79,22 @@ void TextureFont::preLoadLists()
     // fonts are usually pixel aligned
     tm.setTextureFilter(textureID, OpenGLTexture::Nearest);
 
+#ifndef __EMSCRIPTEN__
     for (int i = 0; i < numberOfCharacters; i++)
     {
         if (listIDs[i] != INVALID_GL_LIST_ID)
         {
             glDeleteLists(listIDs[i], 1);
-            listIDs[i] = INVALID_GL_LIST_ID; // make it a habit
+            listIDs[i] = INVALID_GL_LIST_ID;
         }
         listIDs[i] = glGenLists(1);
         glNewList(listIDs[i], GL_COMPILE);
         {
-            const float initiX = (float)fontMetrics[i].initialDist;
-            const float fFontY = (float)(fontMetrics[i].endY
-                                         - fontMetrics[i].startY);
-            const float fFontX = (float)(fontMetrics[i].endX
-                                         - fontMetrics[i].startX);
-            const float startX = (float)fontMetrics[i].startX
-                                 / (float)textureXSize;
-            const float endX   = (float)fontMetrics[i].endX
-                                 / (float)textureXSize;
-            const float startY = (float)fontMetrics[i].startY
-                                 / (float)textureYSize;
-            const float endY   = (float)fontMetrics[i].endY
-                                 / (float)textureYSize;
-
-            glBegin(GL_TRIANGLE_STRIP);
-            glNormal3f(0.0f, 0.0f, 1.0f);
-            glTexCoord2f(startX, 1.0f - startY);
-            glVertex3f(initiX, fFontY, 0.0f);
-
-            glTexCoord2f(startX, 1.0f - endY);
-            glVertex3f(initiX, 0.0f, 0.0f);
-
-            glTexCoord2f(endX, 1.0f - startY);
-            glVertex3f(initiX + fFontX, fFontY, 0.0f);
-
-            glTexCoord2f(endX, 1.0f - endY);
-            glVertex3f(initiX + fFontX, 0.0f, 0.0f);
-            glEnd();
-
-            float fFontPostX = (float)(fontMetrics[i].fullWidth);
-
-            glTranslatef(fFontPostX, 0.0f, 0.0f);
+            renderGlyph(i);
         }
         glEndList();
     }
+#endif
 
     // create GState
     OpenGLGStateBuilder builder(gstate);
@@ -146,6 +119,44 @@ void TextureFont::filter(bool dofilter)
                                            : OpenGLTexture::Nearest;
         tm.setTextureFilter(textureID, type);
     }
+}
+
+void TextureFont::renderGlyph(int i)
+{
+    const float initiX = (float)fontMetrics[i].initialDist;
+    const float fFontY = (float)(fontMetrics[i].endY
+                                 - fontMetrics[i].startY);
+    const float fFontX = (float)(fontMetrics[i].endX
+                                 - fontMetrics[i].startX);
+    const float startX = (float)fontMetrics[i].startX
+                         / (float)textureXSize;
+    const float endX   = (float)fontMetrics[i].endX
+                         / (float)textureXSize;
+    const float startY = (float)fontMetrics[i].startY
+                         / (float)textureYSize;
+    const float endY   = (float)fontMetrics[i].endY
+                         / (float)textureYSize;
+
+    glBegin(GL_TRIANGLE_STRIP);
+#ifndef __EMSCRIPTEN__
+    glNormal3f(0.0f, 0.0f, 1.0f);
+#endif
+    glTexCoord2f(startX, 1.0f - startY);
+    glVertex3f(initiX, fFontY, 0.0f);
+
+    glTexCoord2f(startX, 1.0f - endY);
+    glVertex3f(initiX, 0.0f, 0.0f);
+
+    glTexCoord2f(endX, 1.0f - startY);
+    glVertex3f(initiX + fFontX, fFontY, 0.0f);
+
+    glTexCoord2f(endX, 1.0f - endY);
+    glVertex3f(initiX + fFontX, 0.0f, 0.0f);
+    glEnd();
+
+    float fFontPostX = (float)(fontMetrics[i].fullWidth);
+
+    glTranslatef(fFontPostX, 0.0f, 0.0f);
 }
 
 void TextureFont::drawString(float scale, GLfloat color[4], const char *str,
@@ -188,7 +199,13 @@ void TextureFont::drawString(float scale, GLfloat color[4], const char *str,
         if (charToUse == 0)
             glTranslatef((float)(fontMetrics[charToUse].fullWidth), 0.0f, 0.0f);
         else
+        {
+#ifdef __EMSCRIPTEN__
+            renderGlyph(charToUse);
+#else
             glCallList(listIDs[charToUse]);
+#endif
+        }
     }
     glPopMatrix();
     if (color[0] >= 0)

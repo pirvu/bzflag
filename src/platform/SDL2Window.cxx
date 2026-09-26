@@ -57,7 +57,9 @@ void SDLWindow::iconify(void)
 
 void SDLWindow::disableConfineToMotionbox()
 {
-#ifndef _WIN32
+#ifdef __EMSCRIPTEN__
+    // no-op
+#elif !defined(_WIN32)
     SDL_SetWindowGrab(windowId, SDL_FALSE);
 #else
     ClipCursor(NULL);
@@ -67,6 +69,9 @@ void SDLWindow::disableConfineToMotionbox()
 
 void SDLWindow::confineToMotionbox(int x1, int y1, int x2, int y2)
 {
+#ifdef __EMSCRIPTEN__
+    (void)x1; (void)y1; (void)x2; (void)y2;
+#else
 #ifdef __APPLE__
     // Work around an issue in macOS that caused mouse confinement to persist
     // after minimizing. It seems that mouse/keyboard events are sent to the
@@ -96,6 +101,7 @@ void SDLWindow::confineToMotionbox(int x1, int y1, int x2, int y2)
     // Restrict cursor to that rectangle
     ClipCursor(&rect);
 #endif
+#endif /* __EMSCRIPTEN__ */
 }
 
 
@@ -141,6 +147,10 @@ void SDLWindow::getSize(int& width, int& height) const
 
 void SDLWindow::setGamma(float gamma)
 {
+#ifdef __EMSCRIPTEN__
+    lastGamma = gamma;
+    hasGamma = false;
+#else
     lastGamma = gamma;
     int result = SDL_SetWindowBrightness(windowId, gamma);
     if (result == -1)
@@ -148,16 +158,25 @@ void SDLWindow::setGamma(float gamma)
         printf("Could not set Gamma: %s.\n", SDL_GetError());
         hasGamma = false;
     }
+#endif
 }
 
 float SDLWindow::getGamma() const
 {
+#ifdef __EMSCRIPTEN__
+    return 1.0f;
+#else
     return SDL_GetWindowBrightness(windowId);
+#endif
 }
 
 bool SDLWindow::hasGammaControl() const
 {
+#ifdef __EMSCRIPTEN__
+    return false;
+#else
     return hasGamma;
+#endif
 }
 
 void SDLWindow::swapBuffers()

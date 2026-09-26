@@ -5592,8 +5592,8 @@ static void handleTcp(NetHandler &netPlayer, int i, const RxStatus e)
         playerData = GameKeeper::Player::getPlayerByIndex(t);
 
     // simple ruleset, if player sends a MsgShotBegin over TCP he/she
-    // must not be using the UDP link
-    if (true && playerData != NULL && !playerData->player.isBot())
+    // must not be using the UDP link (skip check with -noudp for WebSocket clients)
+    if (clOptions->requireUDP && playerData != NULL && !playerData->player.isBot())
     {
         if (code == MsgShotBegin)
         {
