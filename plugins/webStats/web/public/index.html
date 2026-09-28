@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>BZFlag Stats</title>
+  <meta name="theme-color" content="#1a1a19">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="#live"><img src="/icon.svg" alt="" width="28" height="28"> BZFlag</a>
+    <nav>
+      <a href="#live" data-tab="live">Live</a>
+      <a href="#log" data-tab="log">Istoric</a>
+      <a href="#players" data-tab="players">Jucători</a>
+      <a href="#notify" data-tab="notify">Notificări</a>
+    </nav>
+  </header>
+
+  <main>
+    <section id="view-live" class="view">
+      <div class="tiles" id="summary"></div>
+      <div class="grid">
+        <div class="card">
+          <h2>Online acum</h2>
+          <div id="servers"></div>
+        </div>
+        <div class="card">
+          <h2>Jocuri recente</h2>
+          <ul class="sessions" id="sessions"></ul>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Log live <span class="dot" id="live-dot" title="conectat"></span></h2>
+        <ol class="log" id="live-log"></ol>
+      </div>
+    </section>
+
+    <section id="view-log" class="view" hidden>
+      <form class="filters" id="log-filters">
+        <select name="types" aria-label="Tip eveniment">
+          <option value="">Toate evenimentele</option>
+          <option value="join,part,game-open,game-empty">Intrări / ieșiri</option>
+          <option value="kill">Omoruri</option>
+          <option value="chat">Chat</option>
+          <option value="capture,flag">Steaguri</option>
+          <option value="log">Log server</option>
+          <option value="server-start,server-stop,match-start,match-end">Server / meciuri</option>
+        </select>
+        <input name="q" type="search" placeholder="Caută…" aria-label="Caută">
+        <span class="chip" id="player-filter" hidden></span>
+      </form>
+      <div class="card">
+        <ol class="log" id="history-log"></ol>
+        <button class="more" id="history-more" hidden>Mai vechi</button>
+      </div>
+    </section>
+
+    <section id="view-players" class="view" hidden>
+      <form class="filters" id="player-filters">
+        <select name="sort" aria-label="Sortare">
+          <option value="kills">Omoruri</option>
+          <option value="ratio">Omoruri / morți</option>
+          <option value="captures">Capturi</option>
+          <option value="playtime_ms">Timp jucat</option>
+          <option value="sessions_opened">Jocuri deschise</option>
+          <option value="last_seen">Văzut recent</option>
+        </select>
+        <select name="days" aria-label="Perioadă">
+          <option value="">Tot timpul</option>
+          <option value="1">Ultimele 24h</option>
+          <option value="7">Ultimele 7 zile</option>
+          <option value="30">Ultimele 30 zile</option>
+        </select>
+      </form>
+      <div class="card table-wrap">
+        <table class="players">
+          <thead>
+            <tr>
+              <th>#</th><th>Jucător</th><th class="n">Omoruri</th><th class="n">Morți</th>
+              <th class="n">K/D</th><th class="n hide-s">Capturi</th><th class="n hide-s">Timp</th>
+              <th class="hide-s">Văzut</th>
+            </tr>
+          </thead>
+          <tbody id="players"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="view-player" class="view" hidden>
+      <div id="player"></div>
+    </section>
+
+    <section id="view-notify" class="view" hidden>
+      <div class="card narrow">
+        <h2>Notificări</h2>
+        <p>Primești o notificare pe acest dispozitiv când cineva deschide un joc (primul jucător intră pe server).</p>
+        <p class="status" id="push-status"></p>
+        <div class="actions">
+          <button id="push-on">Activează</button>
+          <button id="push-test" class="secondary" hidden>Trimite un test</button>
+          <button id="push-off" class="secondary" hidden>Dezactivează</button>
+        </div>
+        <p class="muted small">Pe iPhone notificările merg doar după „Adaugă pe ecranul principal”. Pagina trebuie servită prin HTTPS.</p>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
