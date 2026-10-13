@@ -11,6 +11,8 @@ AM_CXXFLAGS = $(CONF_CXXFLAGS)
 
 EXTRA_DIST = \
 	README.webStats.txt \
+	INSTALL.ro.md \
+	deploy \
 	webStats.cfg \
 	web
 

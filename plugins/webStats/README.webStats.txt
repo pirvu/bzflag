@@ -13,7 +13,9 @@ page with:
 * Chrome / Firefox / Edge push notifications when somebody opens a game, that
   is when the first player (not an observer) joins an empty server
 
-See web/README.md for running the web service.
+See web/README.md for running the web service, and INSTALL.ro.md for a
+step by step installation on a Linux server with systemd and Caddy (in
+Romanian). Ready to copy files are in deploy/.
 
 
 Loading the plugin
