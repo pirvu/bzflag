@@ -1,0 +1,30 @@
+# systemd unit for the webStats web service.
+# Copy to /etc/systemd/system/webstats.service (see INSTALL.ro.md)
+
+[Unit]
+Description=BZFlag webStats web service
+After=network.target
+
+[Service]
+Type=simple
+User=bzflag
+Group=bzflag
+EnvironmentFile=/etc/bzflag/webstats.env
+Environment=HOST=127.0.0.1
+Environment=PORT=8080
+Environment=DATA_DIR=/var/lib/bzflag-webstats
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning /opt/bzflag-webstats/server.js
+Restart=on-failure
+RestartSec=5
+
+# creates /var/lib/bzflag-webstats owned by the bzflag user
+StateDirectory=bzflag-webstats
+StateDirectoryMode=0750
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
