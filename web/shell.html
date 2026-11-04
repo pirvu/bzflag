@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>BZFlag</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -76,6 +76,8 @@
 
 <!-- Mock BZFlag server for solo mode -->
 <script src="mock-server.js"></script>
+<!-- Touch controls for phones and tablets -->
+<script src="touch-controls.js"></script>
 <script>
 (function() {
   var MockBZFlagServer = window.MockBZFlagServer;
@@ -287,14 +289,17 @@
     });
   })();
 
-  // Auto-save config to localStorage on page unload
-  window.addEventListener('beforeunload', function() {
+  // Auto-save config to localStorage on page unload. Mobile browsers often
+  // skip beforeunload; pagehide also covers them.
+  function saveConfig() {
     try {
       var configPath = '/persistent/bzf/2.4/config.cfg';
       var data = FS.readFile(configPath, { encoding: 'utf8' });
       localStorage.setItem('bzflag-config', data);
     } catch(e) {}
-  });
+  }
+  window.addEventListener('beforeunload', saveConfig);
+  window.addEventListener('pagehide', saveConfig);
 
   // Restart: reload the page to get a fresh WASM instance
   document.getElementById('restart-btn').addEventListener('click', function() {

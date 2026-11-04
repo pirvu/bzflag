@@ -26,6 +26,7 @@
 #include <dirent.h>
 #include <utime.h>
 #endif
+#include <algorithm>
 #include <cmath>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -596,6 +597,21 @@ static bool     motionFreeze = false;
 static enum { None, Left, Right, Up, Down } keyboardMovement;
 static int shiftKeyStatus;
 
+
+#ifdef __EMSCRIPTEN__
+// Lets the web page's touch controls show their menu pad while a menu is up
+extern "C" EMSCRIPTEN_KEEPALIVE int bzf_menu_active()
+{
+    return HUDDialogStack::get()->isActive() ? 1 : 0;
+}
+
+// ... and their start button while the HUD asks the player to start
+extern "C" EMSCRIPTEN_KEEPALIVE int bzf_waiting_to_start()
+{
+    LocalPlayer* tank = LocalPlayer::getMyTank();
+    return tank && !tank->isAlive() && !tank->isExploding() ? 1 : 0;
+}
+#endif
 
 static bool doKeyCommon(const BzfKeyEvent& key, bool pressed)
 {
@@ -1473,6 +1489,11 @@ void            notifyBzfKeyMapChanged()
 {
     std::string restartLabel = "Right Mouse";
     std::vector<std::string> keys = KEYMGR.getKeysFromCommand("restart", false);
+
+#ifdef __EMSCRIPTEN__
+    // the touch controls show their own START button for Joystick Button 5
+    keys.erase(std::remove(keys.begin(), keys.end(), std::string("Joystick Button 5")), keys.end());
+#endif
 
     if (keys.empty())
     {

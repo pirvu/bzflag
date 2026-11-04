@@ -50,7 +50,7 @@ function buildIndexHtml() {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>BZFlag</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -150,6 +150,7 @@ function buildIndexHtml() {
 
 <!-- Mock BZFlag server for solo mode -->
 <script src="mock-server.js?v=${BUILD_ID}"></script>
+<script src="touch-controls.js?v=${BUILD_ID}"></script>
 <script>
 (function() {
   var MockBZFlagServer = window.MockBZFlagServer;
@@ -367,12 +368,15 @@ function buildIndexHtml() {
       }
     });
 
-    window.addEventListener('beforeunload', function() {
+    // Mobile browsers often skip beforeunload; pagehide also covers them
+    function saveConfig() {
       try {
         var data = FS.readFile('/persistent/bzf/2.4/config.cfg', { encoding: 'utf8' });
         localStorage.setItem('bzflag-config', data);
       } catch(e) {}
-    });
+    }
+    window.addEventListener('beforeunload', saveConfig);
+    window.addEventListener('pagehide', saveConfig);
 
     var script = document.createElement('script');
     script.src = 'bzflag.js?v=${BUILD_ID}';

@@ -16,6 +16,9 @@
 #include "SDL2Visual.h"
 #include "SDL2Window.h"
 #include "SDLJoystick.h"
+#ifdef __EMSCRIPTEN__
+#include "TouchJoystick.h"
+#endif
 
 PlatformFactory* PlatformFactory::getInstance()
 {
@@ -63,7 +66,11 @@ BzfMedia* SdlPlatformFactory::createMedia()
 
 BzfJoystick* SdlPlatformFactory::createJoystick()
 {
+#ifdef __EMSCRIPTEN__
+    return new TouchJoystick;
+#else
     return new SDLJoystick;
+#endif
 }
 
 std::string SdlPlatformFactory::getClipboard()

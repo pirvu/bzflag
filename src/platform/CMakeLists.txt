@@ -17,6 +17,10 @@ if(APPLE)
     target_sources(BZFlag_Platform PRIVATE MacDataPath.cxx)
 endif()
 
+if(EMSCRIPTEN)
+    target_sources(BZFlag_Platform PRIVATE TouchJoystick.cxx)
+endif()
+
 target_include_directories(BZFlag_Platform PUBLIC
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_BINARY_DIR}/include
