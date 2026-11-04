@@ -34,6 +34,9 @@ Browser: [WASM Client] <-> [JS Mock Server (in-page)] <-> [MockWebSocketAdapter]
   lives in interleaved vertex buffers (`OpenGLVertexBuffer`), and only
   `GL_VERTEX_ARRAY` is enabled by default: every array draw enables what
   it needs and restores that default.
+- `tools/emscripten-gltest/run.sh` checks these paths pixel for pixel
+  against immediate mode in headless Chromium (no Emscripten ports or
+  network needed).
 - No audio (muted for stability)
 - Boundary walls visible but very tall
 
@@ -121,7 +124,7 @@ docker run -p 8080:8080 bzflag-multiplayer
 - `src/bzflag/playing.cxx` — GL state before dialog, game exit handler, UDP skip
 - `src/bzflag/ServerLink.cxx` — WebSocket transport, emscripten_sleep
 - `src/bzflag/ServerStartMenu.cxx` — Skip fork/exec
-- `src/3D/TextureFont.cxx` — Direct glyph render
+- `src/3D/TextureFont.cxx` — Whole string in one batched draw
 - `src/geometry/TankGeometryMgr.cxx` — Parts recorded once into vertex buffers
 - `src/geometry/TankSceneNode.cxx` — renderPart for Emscripten
 - `src/geometry/MeshFragSceneNode.cxx`, `MeshDrawMgr.cxx` — Vertex buffers, 16-bit triangle indices

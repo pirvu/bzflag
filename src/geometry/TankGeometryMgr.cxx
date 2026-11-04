@@ -478,35 +478,11 @@ void TankGeometryUtils::doEnd()
 {
     if (recordTarget == NULL)
         return;
-    const size_t n = recordPrim.size() / OpenGLVertexBuffer::FloatsPerVertex;
-    for (size_t i = 0; i + 2 < n; )
-    {
-        switch (recordMode)
-        {
-        case GL_TRIANGLES:
-            emitVertex(i);
-            emitVertex(i + 1);
-            emitVertex(i + 2);
-            i += 3;
-            break;
-        case GL_TRIANGLE_STRIP:
-            // keep the winding consistent on odd triangles
-            emitVertex((i & 1) ? i + 1 : i);
-            emitVertex((i & 1) ? i : i + 1);
-            emitVertex(i + 2);
-            i++;
-            break;
-        case GL_TRIANGLE_FAN:
-            emitVertex(0);
-            emitVertex(i + 1);
-            emitVertex(i + 2);
-            i++;
-            break;
-        default:
-            i = n;
-            break;
-        }
-    }
+    const int n = (int)(recordPrim.size() / OpenGLVertexBuffer::FloatsPerVertex);
+    std::vector<int> corners;
+    triangulatePrimitive(recordMode, n, corners);
+    for (int c : corners)
+        emitVertex(c);
     recordPrim.clear();
 }
 

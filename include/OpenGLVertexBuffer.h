@@ -80,6 +80,12 @@ private:
     bool dirty;
 };
 
+// Vertex indices (into a primitive of n vertices) of the triangles that
+// make up a GL_TRIANGLES, _STRIP, _FAN, GL_QUADS, _QUAD_STRIP or GL_POLYGON
+// primitive, appended to out with the winding OpenGL would use. Returns
+// false, leaving out unchanged, for points and lines.
+bool triangulatePrimitive(GLenum mode, int n, std::vector<int>& out);
+
 #endif // __EMSCRIPTEN__
 
 #endif // _OPENGL_VERTEX_BUFFER_H

@@ -159,6 +159,30 @@ void TextureFont::renderGlyph(int i)
     glTranslatef(fFontPostX, 0.0f, 0.0f);
 }
 
+#ifdef __EMSCRIPTEN__
+// Append the quad of glyph i, starting at x, as two triangles of
+// interleaved position (3 floats) and texcoord (2 floats).
+void TextureFont::appendGlyph(int i, float x, std::vector<GLfloat>& verts) const
+{
+    const float x0 = x + (float)fontMetrics[i].initialDist;
+    const float x1 = x0 + (float)(fontMetrics[i].endX - fontMetrics[i].startX);
+    const float y1 = (float)(fontMetrics[i].endY - fontMetrics[i].startY);
+    const float u0 = (float)fontMetrics[i].startX / (float)textureXSize;
+    const float u1 = (float)fontMetrics[i].endX / (float)textureXSize;
+    const float v0 = 1.0f - (float)fontMetrics[i].startY / (float)textureYSize;
+    const float v1 = 1.0f - (float)fontMetrics[i].endY / (float)textureYSize;
+
+    // same corners as the triangle strip in renderGlyph()
+    const GLfloat quad[6][5] =
+    {
+        { x0, y1, 0.0f, u0, v0 }, { x0, 0.0f, 0.0f, u0, v1 }, { x1, y1, 0.0f, u1, v0 },
+        { x1, y1, 0.0f, u1, v0 }, { x0, 0.0f, 0.0f, u0, v1 }, { x1, 0.0f, 0.0f, u1, v1 }
+    };
+    verts.insert(verts.end(), &quad[0][0], &quad[0][0] + 6 * 5);
+}
+#endif
+
+
 void TextureFont::drawString(float scale, GLfloat color[4], const char *str,
                              int len)
 {
@@ -183,6 +207,14 @@ void TextureFont::drawString(float scale, GLfloat color[4], const char *str,
     glPushMatrix();
     glScalef(scale, scale, 1);
 
+#ifdef __EMSCRIPTEN__
+    // No display lists: draw the whole string with one call instead of a
+    // glBegin/glEnd and a glTranslatef per character, each of which is a
+    // separate upload and draw in the GL emulation.
+    static std::vector<GLfloat> verts;
+    verts.clear();
+    float x = 0.0f;
+#endif
     int charToUse = 0;
     for (int i = 0; i < len; i++)
     {
@@ -196,17 +228,28 @@ void TextureFont::drawString(float scale, GLfloat color[4], const char *str,
 
         charToUse -= space;
 
+#ifdef __EMSCRIPTEN__
+        if (charToUse != 0)
+            appendGlyph(charToUse, x, verts);
+        x += (float)fontMetrics[charToUse].fullWidth;
+#else
         if (charToUse == 0)
             glTranslatef((float)(fontMetrics[charToUse].fullWidth), 0.0f, 0.0f);
         else
-        {
-#ifdef __EMSCRIPTEN__
-            renderGlyph(charToUse);
-#else
             glCallList(listIDs[charToUse]);
 #endif
-        }
     }
+#ifdef __EMSCRIPTEN__
+    if (!verts.empty())
+    {
+        const GLsizei stride = 5 * sizeof(GLfloat);
+        glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+        glVertexPointer(3, GL_FLOAT, stride, &verts[0]);
+        glTexCoordPointer(2, GL_FLOAT, stride, &verts[3]);
+        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(verts.size() / 5));
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    }
+#endif
     glPopMatrix();
     if (color[0] >= 0)
         glColor4f(1, 1, 1, 1);

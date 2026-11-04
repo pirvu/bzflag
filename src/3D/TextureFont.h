@@ -20,6 +20,10 @@
 #include "bzfgl.h"
 #include "OpenGLGState.h"
 
+#ifdef __EMSCRIPTEN__
+#include <vector>
+#endif
+
 class TextureFont final : public ImageFont
 {
 public:
@@ -40,6 +44,9 @@ public:
 private:
     void preLoadLists();
     void renderGlyph(int charIndex);
+#ifdef __EMSCRIPTEN__
+    void appendGlyph(int charIndex, float x, std::vector<GLfloat>& verts) const;
+#endif
 
     unsigned int  listIDs[MAX_TEXTURE_FONT_CHARS];
 

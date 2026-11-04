@@ -123,6 +123,56 @@ void OpenGLVertexBuffer::clear()
     count = 0;
 }
 
+
+bool triangulatePrimitive(GLenum mode, int n, std::vector<int>& out)
+{
+    auto tri = [&out](int a, int b, int c)
+    {
+        out.push_back(a);
+        out.push_back(b);
+        out.push_back(c);
+    };
+    switch (mode)
+    {
+    case GL_TRIANGLES:
+        for (int i = 0; i + 2 < n; i += 3)
+            tri(i, i + 1, i + 2);
+        return true;
+    case GL_TRIANGLE_STRIP:
+        // every other triangle is flipped to keep the winding
+        for (int i = 0; i + 2 < n; i++)
+        {
+            if (i & 1)
+                tri(i + 1, i, i + 2);
+            else
+                tri(i, i + 1, i + 2);
+        }
+        return true;
+    case GL_TRIANGLE_FAN:
+    case GL_POLYGON:
+        for (int i = 1; i + 1 < n; i++)
+            tri(0, i, i + 1);
+        return true;
+    case GL_QUADS:
+        for (int i = 0; i + 3 < n; i += 4)
+        {
+            tri(i, i + 1, i + 2);
+            tri(i, i + 2, i + 3);
+        }
+        return true;
+    case GL_QUAD_STRIP:
+        // quad k is vertices 2k, 2k+1, 2k+3, 2k+2
+        for (int i = 0; i + 3 < n; i += 2)
+        {
+            tri(i, i + 1, i + 3);
+            tri(i, i + 3, i + 2);
+        }
+        return true;
+    default:
+        return false;
+    }
+}
+
 #endif // __EMSCRIPTEN__
 
 // Local Variables: ***

@@ -91,55 +91,20 @@ static unsigned int getIndex(const DrawCmd& cmd, int i)
 
 
 // convert one draw command to 16-bit indices, turning every polygon mode
-// into GL_TRIANGLES
+// into GL_TRIANGLES; points and lines are passed through
 static void convertCmd(const DrawCmd& cmd, std::vector<GLushort>& tris,
                        std::vector<GLushort>& other)
 {
-    const int n = cmd.count;
-    auto tri = [&](int a, int b, int c)
+    std::vector<int> corners;
+    if (triangulatePrimitive(cmd.drawMode, cmd.count, corners))
     {
-        tris.push_back((GLushort)getIndex(cmd, a));
-        tris.push_back((GLushort)getIndex(cmd, b));
-        tris.push_back((GLushort)getIndex(cmd, c));
-    };
-    switch (cmd.drawMode)
+        for (int c : corners)
+            tris.push_back((GLushort)getIndex(cmd, c));
+    }
+    else
     {
-    case DrawCmd::DrawTriangles:
-        for (int i = 0; i + 2 < n; i += 3)
-            tri(i, i + 1, i + 2);
-        break;
-    case DrawCmd::DrawTriangleStrip:
-        for (int i = 0; i + 2 < n; i++)
-        {
-            if (i & 1)
-                tri(i + 1, i, i + 2);
-            else
-                tri(i, i + 1, i + 2);
-        }
-        break;
-    case DrawCmd::DrawTriangleFan:
-    case DrawCmd::DrawPolygon:
-        for (int i = 1; i + 1 < n; i++)
-            tri(0, i, i + 1);
-        break;
-    case DrawCmd::DrawQuads:
-        for (int i = 0; i + 3 < n; i += 4)
-        {
-            tri(i, i + 1, i + 2);
-            tri(i, i + 2, i + 3);
-        }
-        break;
-    case DrawCmd::DrawQuadStrip:
-        for (int i = 0; i + 3 < n; i += 2)
-        {
-            tri(i, i + 1, i + 3);
-            tri(i, i + 3, i + 2);
-        }
-        break;
-    default: // points and lines are passed through
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < cmd.count; i++)
             other.push_back((GLushort)getIndex(cmd, i));
-        break;
     }
 }
 
