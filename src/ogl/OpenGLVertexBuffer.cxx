@@ -161,11 +161,12 @@ bool triangulatePrimitive(GLenum mode, int n, std::vector<int>& out)
         }
         return true;
     case GL_QUAD_STRIP:
-        // quad k is vertices 2k, 2k+1, 2k+3, 2k+2
+        // quad k is vertices 2k, 2k+1, 2k+3, 2k+2; split it along the same
+        // diagonal as a triangle strip of those vertices
         for (int i = 0; i + 3 < n; i += 2)
         {
-            tri(i, i + 1, i + 3);
-            tri(i, i + 3, i + 2);
+            tri(i, i + 1, i + 2);
+            tri(i + 2, i + 1, i + 3);
         }
         return true;
     default:

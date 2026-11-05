@@ -146,27 +146,12 @@ void glLogicOp(GLenum /*opcode*/) {}
 
 } // extern "C"
 
-// GLU quadrics — <GL/glu.h> declares these but Emscripten doesn't link libGLU.
-// No-op stubs: return a dummy pointer and discard draw calls.
-// NOTE: no-op; real impl will require a VBO-based quadric generator.
-struct GLUquadricStub { int dummy; };
+// GLU — <GL/glu.h> declares these but Emscripten doesn't link libGLU. The
+// quadrics (gluNewQuadric, gluSphere, gluCylinder, gluDisk...) live in
+// EmscriptenQuadrics.cxx.
 
 extern "C"
 {
-
-GLUquadric* gluNewQuadric()
-{
-    static GLUquadricStub single;
-    return reinterpret_cast<GLUquadric*>(&single);
-}
-void gluDeleteQuadric(GLUquadric*) {}
-void gluQuadricDrawStyle(GLUquadric*, GLenum) {}
-void gluQuadricTexture(GLUquadric*, GLboolean) {}
-void gluQuadricNormals(GLUquadric*, GLenum) {}
-void gluQuadricOrientation(GLUquadric*, GLenum) {}
-void gluDisk(GLUquadric*, GLdouble, GLdouble, GLint, GLint) {}
-void gluCylinder(GLUquadric*, GLdouble, GLdouble, GLdouble, GLint, GLint) {}
-void gluSphere(GLUquadric*, GLdouble, GLint, GLint) {}
 
 // gluProject — same math as the reference GLU implementation:
 // window = viewport(project(proj * model * obj)).

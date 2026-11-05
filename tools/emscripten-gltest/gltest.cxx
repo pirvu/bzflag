@@ -18,6 +18,17 @@
 #include <vector>
 #include <functional>
 #include "OpenGLVertexBuffer.h"
+#include "OpenGLGState.h"
+#include "QuadricGeometry.h"
+
+// EmscriptenQuadrics.cxx registers for context loss; keep the callback so
+// the test can simulate one
+static OpenGLContextFunction quadricsFreeContext = NULL;
+void OpenGLGState::registerContextInitializer(OpenGLContextFunction freeFunc,
+        OpenGLContextFunction, void*)
+{
+    quadricsFreeContext = freeFunc;
+}
 
 static const int W = 256, H = 256;
 static int failures = 0;
@@ -503,6 +514,173 @@ static void demoOldBug()
            d, d ? " (bug reproduced)" : "");
 }
 
+// Immediate-mode playback of QuadricGeometry primitives (which match
+// libGLU's, see glucmp.cxx). The emulation has no GL_QUAD_STRIP in
+// glBegin(); a quad strip is the same surface as a triangle strip.
+static void playback(const QuadricPrimitives& prims)
+{
+    for (const QuadricPrimitives::Primitive& p : prims.primitives)
+    {
+        glBegin(p.mode == GL_QUAD_STRIP ? GL_TRIANGLE_STRIP : p.mode);
+        for (size_t i = 0; i < p.vertices.size(); i += 8)
+        {
+            const GLfloat* a = &p.vertices[i];
+            glNormal3f(a[3], a[4], a[5]);
+            glTexCoord2f(a[6], a[7]);
+            glVertex3f(a[0], a[1], a[2]);
+        }
+        glEnd();
+    }
+}
+
+// the quadrics as BZFlag draws them, seen from an angle
+static void quadricScene(bool useGLU, bool textured_)
+{
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(-2, 2, -2, 2, -10, 10);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    glRotatef(-60, 1, 0, 0);
+    glRotatef(30, 0, 0, 1);
+    glEnable(GL_DEPTH_TEST);
+
+    QuadricStyle style;
+    style.texture = textured_;
+    GLUquadric* q = gluNewQuadric();
+    gluQuadricTexture(q, textured_ ? GL_TRUE : GL_FALSE);
+
+    struct Item { float x, y; int kind; double a, b, c; int s, t; };
+    const Item items[] =
+    {
+        { -1.0f, 1.0f, 0, 0.8, 0, 0, 32, 32 },     // sphere, SphereSceneNode LOD 0
+        { 1.0f, 1.0f, 0, 0.8, 0, 0, 6, 6 },        // sphere, low LOD
+        { -1.0f, -1.0f, 1, 0.4, 0.4, 1.5, 32, 1 }, // laser cylinder
+        { 0.2f, -1.0f, 1, 0.0, 0.43589, 0.6, 8, 1 }, // bolt cone
+        { 1.2f, -1.0f, 2, 0.0, 0.5, 0, 8, 1 },     // bolt nose disk
+    };
+    for (const Item& it : items)
+    {
+        glPushMatrix();
+        glTranslatef(it.x, it.y, 0);
+        if (useGLU)
+        {
+            if (it.kind == 0)
+                gluSphere(q, it.a, it.s, it.t);
+            else if (it.kind == 1)
+                gluCylinder(q, it.a, it.b, it.c, it.s, it.t);
+            else
+                gluDisk(q, it.a, it.b, it.s, it.t);
+        }
+        else
+        {
+            QuadricPrimitives prims;
+            if (it.kind == 0)
+                quadricSphere(style, it.a, it.s, it.t, prims);
+            else if (it.kind == 1)
+                quadricCylinder(style, it.a, it.b, it.c, it.s, it.t, prims);
+            else
+                quadricPartialDisk(style, it.a, it.b, it.s, it.t, 0, 360, prims);
+            playback(prims);
+        }
+        glPopMatrix();
+    }
+    gluDeleteQuadric(q);
+
+    glDisable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+}
+
+static void testQuadrics()
+{
+    glColor4f(1, 1, 1, 1);
+    for (int tex = 0; tex < 2; tex++)
+    {
+        textured(tex);
+        if (!tex)
+            glColor4f(0.3f, 0.8f, 1.0f, 1);
+        Image ref = render([&] { quadricScene(false, tex); });
+        Image got = render([&] { quadricScene(true, tex); });
+        check(tex ? "quadrics: gluSphere/Cylinder/Disk VBOs, textured"
+                  : "quadrics: gluSphere/Cylinder/Disk VBOs, untextured", ref, got);
+        // second draw comes from the cache
+        got = render([&] { quadricScene(true, tex); });
+        check(tex ? "quadrics: cached buffers, textured" : "quadrics: cached buffers, untextured",
+              ref, got);
+    }
+    // context loss: buffers are re-uploaded on the next draw
+    textured(true);
+    glColor4f(1, 1, 1, 1);
+    Image ref = render([&] { quadricScene(false, true); });
+    if (quadricsFreeContext)
+        quadricsFreeContext(NULL);
+    Image got = render([&] { quadricScene(true, true); });
+    check("quadrics: redrawn after context loss", ref, got);
+
+    // immediate mode after quadric draws
+    const std::vector<Prim> prims = tankLikePrims();
+    ref = render([&] { for (const Prim& p : prims) drawImmediate(p, p.mode); });
+    got = render([&]
+    {
+        quadricScene(true, true);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        for (const Prim& p : prims) drawImmediate(p, p.mode);
+    });
+    check("immediate mode after quadric draws is unaffected", ref, got);
+}
+
+// SphereSceneNode's shock wave: GL_INVERT logic op replaced by blending
+// white with (1 - destination)
+static void testShockWaveInvert()
+{
+    const std::vector<Prim> prims = tankLikePrims();
+    auto background = [&]
+    {
+        textured(true);
+        glColor4f(1, 1, 1, 1);
+        for (const Prim& p : prims) drawImmediate(p, p.mode);
+    };
+    GLUquadric* q = gluNewQuadric();
+    auto sphere = [&]
+    {
+        glPushMatrix();
+        glTranslatef(128, 128, 0);
+        glScalef(90, 90, 1);
+        gluSphere(q, 1.0, 16, 16);
+        glPopMatrix();
+    };
+    const Image bg = render(background);
+    const Image mask = render([&]
+    {
+        textured(false);
+        glColor4f(1, 1, 1, 1);
+        sphere();
+    });
+    Image expect = bg;
+    for (int i = 0; i < W * H; i++)
+        if (mask[i * 4] > 128)
+            for (int c = 0; c < 3; c++)
+                expect[i * 4 + c] = (unsigned char)(255 - bg[i * 4 + c]);
+    const Image got = render([&]
+    {
+        background();
+        textured(false);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ZERO);
+        glColor4f(1, 1, 1, 1);
+        sphere();
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDisable(GL_BLEND);
+    });
+    gluDeleteQuadric(q);
+    check("shock wave: blend inversion == 255 - background", expect, got);
+}
+
 static double timeFrames(const std::function<void()>& frame, int frames)
 {
     unsigned char px[4];
@@ -580,6 +758,8 @@ int main(int argc, char** argv)
     testTankParts();
     testMeshIndexed();
     testFonts();
+    testQuadrics();
+    testShockWaveInvert();
     demoOldBug();
     benchmarks();
 

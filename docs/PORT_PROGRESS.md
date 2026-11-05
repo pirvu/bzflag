@@ -34,9 +34,13 @@ Browser: [WASM Client] <-> [JS Mock Server (in-page)] <-> [MockWebSocketAdapter]
   lives in interleaved vertex buffers (`OpenGLVertexBuffer`), and only
   `GL_VERTEX_ARRAY` is enabled by default: every array draw enables what
   it needs and restores that default.
-- `tools/emscripten-gltest/run.sh` checks these paths pixel for pixel
-  against immediate mode in headless Chromium (no Emscripten ports or
-  network needed).
+- GLU quadrics (lasers at quality 3, bolts, spheres and shock waves) are
+  generated like libGLU does and drawn from cached vertex buffers. The
+  shock wave's `GL_INVERT` logic op, which WebGL lacks, is done by blending
+  white with `GL_ONE_MINUS_DST_COLOR, GL_ZERO`.
+- `tools/emscripten-gltest/run.sh` checks the quadric geometry against
+  the system libGLU, and these paths pixel for pixel against immediate
+  mode in headless Chromium (no Emscripten ports or network needed).
 - No audio (muted for stability)
 - Boundary walls visible but very tall
 
@@ -104,7 +108,9 @@ docker run -p 8080:8080 bzflag-multiplayer
 - `docker/server.mjs` — Node.js server: static files + WS proxy + bzfs manager + lobby HTML
 
 ### New files (Emscripten stubs)
-- `src/ogl/EmscriptenStubs.cxx` — GL no-ops (display lists, GLU, texgen, etc.)
+- `src/ogl/EmscriptenStubs.cxx` — GL no-ops (display lists, texgen, etc.), gluProject
+- `src/ogl/QuadricGeometry.cxx`, `EmscriptenQuadrics.cxx` — GLU quadrics (spheres,
+  cylinders, disks) with libGLU's geometry, cached in vertex buffers
 - `src/ogl/OpenGLVertexBuffer.cxx` — Interleaved static vertex buffers (display list replacement)
 - `src/common/cURLManager_stub.cxx` — HTTP stub
 - `src/net/AresHandler_stub.cxx`, `Ping_stub.cxx`, `multicast_stub.cxx`
@@ -129,6 +135,7 @@ docker run -p 8080:8080 bzflag-multiplayer
 - `src/geometry/TankSceneNode.cxx` — renderPart for Emscripten
 - `src/geometry/MeshFragSceneNode.cxx`, `MeshDrawMgr.cxx` — Vertex buffers, 16-bit triangle indices
 - `src/geometry/FlagSceneNode.cxx` — executeNoList with interleaved arrays
+- `src/geometry/SphereSceneNode.cxx` — gluSphere per LOD, shock wave inversion by blending
 - `src/platform/SDL2Window.cxx`, `SDL2Display.cxx` — Platform stubs
 - `src/game/DirectoryNames.cxx` — Browser paths
 

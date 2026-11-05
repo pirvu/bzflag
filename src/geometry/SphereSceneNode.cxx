@@ -125,8 +125,36 @@ float SphereLodSceneNode::lodPixelsSqr[sphereLods];
 int SphereLodSceneNode::listTriangleCount[sphereLods];
 
 
+#ifdef __EMSCRIPTEN__
+// No display lists under WebGL: each level of detail is drawn with
+// gluSphere(), which keeps the geometry in a vertex buffer
+static const int lodDivisions[sphereLods] = { 32, 16, 8, 6, 4 };
+
+static void drawSphereLod(int lod)
+{
+    static GLUquadric* quadric = NULL;
+    if (quadric == NULL)
+    {
+        quadric = gluNewQuadric();
+        gluQuadricDrawStyle(quadric, GLU_FILL);
+        gluQuadricTexture(quadric, GL_TRUE);
+        gluQuadricNormals(quadric, GL_SMOOTH);
+        gluQuadricOrientation(quadric, GLU_OUTSIDE);
+    }
+    gluSphere(quadric, 1.0, lodDivisions[lod], lodDivisions[lod]);
+}
+#endif
+
+
 static GLuint buildSphereList(GLdouble radius, GLint slices, GLint stacks)
 {
+#ifdef __EMSCRIPTEN__
+    // see drawSphereLod()
+    (void)radius;
+    (void)slices;
+    (void)stacks;
+    return INVALID_GL_LIST_ID;
+#else
     GLuint list;
 
     GLUquadric* quadric = gluNewQuadric();
@@ -145,6 +173,7 @@ static GLuint buildSphereList(GLdouble radius, GLint slices, GLint stacks)
     gluDeleteQuadric(quadric);
 
     return list;
+#endif
 }
 
 
@@ -366,16 +395,27 @@ void SphereLodSceneNode::SphereLodRenderNode::render()
 
     glEnable(GL_CLIP_PLANE0);
 
+#ifndef __EMSCRIPTEN__
 #ifdef GL_VERSION_1_2
     glEnable(GL_RESCALE_NORMAL);
 #else
     glEnable(GL_NORMALIZE);
+#endif
 #endif
 
     const bool transparent = sceneNode->transparent;
     const bool stippled = transparent && !BZDBCache::blend;
 
     const GLuint list = SphereLodSceneNode::lodLists[lod];
+    auto drawSphere = [&]()
+    {
+#ifdef __EMSCRIPTEN__
+        (void)list;
+        drawSphereLod(lod);
+#else
+        glCallList(list);
+#endif
+    };
 
     glPushMatrix();
     {
@@ -385,6 +425,14 @@ void SphereLodSceneNode::SphereLodRenderNode::render()
         // invert the color within contained volume
         if (sceneNode->shockWave)
         {
+#ifdef __EMSCRIPTEN__
+            // No logic ops in WebGL. Blending a white fragment as
+            // (1 - destination) * 1 + destination * 0 inverts the same way.
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ZERO);
+            glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+            glDisable(GL_LIGHTING);
+#else
             if (transparent)
             {
                 if (BZDBCache::blend)
@@ -396,14 +444,15 @@ void SphereLodSceneNode::SphereLodRenderNode::render()
 
             glLogicOp(GL_INVERT);
             glEnable(GL_COLOR_LOGIC_OP);
+#endif
             {
                 glCullFace(GL_FRONT);
-                glCallList(list);
+                drawSphere();
                 addTriangleCount(listTriangleCount[lod]);
                 glCullFace(GL_BACK);
                 if (!sceneNode->inside)
                 {
-                    glCallList(list);
+                    drawSphere();
                     addTriangleCount(listTriangleCount[lod]);
                 }
                 else
@@ -412,6 +461,13 @@ void SphereLodSceneNode::SphereLodRenderNode::render()
                     addTriangleCount(2);
                 }
             }
+#ifdef __EMSCRIPTEN__
+            // back to this node's gstate blending (lighting stays off)
+            if (transparent && BZDBCache::blend)
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            else
+                glDisable(GL_BLEND);
+#else
             glDisable(GL_COLOR_LOGIC_OP);
 
             if (transparent)
@@ -422,6 +478,7 @@ void SphereLodSceneNode::SphereLodRenderNode::render()
                     myStipple(0.5f);
             }
             glEnable(GL_LIGHTING);
+#endif
         }
 
         // draw the surface
@@ -431,20 +488,22 @@ void SphereLodSceneNode::SphereLodRenderNode::render()
         if (!stippled)
         {
             glCullFace(GL_FRONT);
-            glCallList(list);
+            drawSphere();
             addTriangleCount(listTriangleCount[lod]);
         }
         glCullFace(GL_BACK);
         if (!sceneNode->inside)
         {
-            glCallList(list);
+            drawSphere();
             addTriangleCount(listTriangleCount[lod]);
         }
         else
         {
             glDisable(GL_LIGHTING);
             drawFullScreenRect();
+#ifndef __EMSCRIPTEN__
             glEnable(GL_LIGHTING);
+#endif
             addTriangleCount(2);
         }
         if (stippled)
@@ -452,10 +511,12 @@ void SphereLodSceneNode::SphereLodRenderNode::render()
     }
     glPopMatrix();
 
+#ifndef __EMSCRIPTEN__
 #ifdef GL_VERSION_1_2
     glDisable(GL_RESCALE_NORMAL);
 #else
     glDisable(GL_NORMALIZE);
+#endif
 #endif
 
     glDisable(GL_CLIP_PLANE0);
