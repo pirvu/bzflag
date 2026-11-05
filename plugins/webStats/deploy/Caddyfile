@@ -1,0 +1,8 @@
+# Caddy in front of the webStats web service. Caddy gets the HTTPS
+# certificate by itself; the name must point to this machine in DNS.
+# Copy to /etc/caddy/Caddyfile and replace the name.
+
+stats.example.org {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080
+}

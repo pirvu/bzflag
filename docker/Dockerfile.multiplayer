@@ -1,8 +1,9 @@
 # Multi-stage build: WASM client + native bzfs server + Node.js server
 # Usage:
 #   docker build -f docker/Dockerfile.multiplayer -t bzflag-multiplayer .
-#   docker run -p 8080:8080 bzflag-multiplayer
+#   docker run -p 8080:80 -v bzflag-data:/data bzflag-multiplayer
 #   Open http://localhost:8080
+#   Statistics, history and notifications: http://localhost:8080/stats/
 #
 # Single port serves everything: static files + WebSocket proxy to bzfs.
 # Players opening the page auto-connect to the bundled server.
@@ -36,11 +37,12 @@ RUN mkdir -p build-server && cd build-server && \
       -DENABLE_CLIENT=OFF \
       -DENABLE_SERVER=ON \
       -DENABLE_BZADMIN=OFF \
-      -DENABLE_PLUGINS=OFF && \
-    make -j$(nproc) bzfs
+      -DENABLE_PLUGINS=ON && \
+    make -j$(nproc) bzfs webStats
 
 # ── Stage 3: Runtime ────────────────────────────────────────────────
-FROM node:20-alpine
+# Node 22.13+ for node:sqlite, used by the webStats service
+FROM node:22-alpine
 
 RUN apk add --no-cache libcurl c-ares zlib libstdc++ libgcc
 
@@ -54,8 +56,14 @@ COPY --from=wasm-build /src/build-emscripten/src/bzflag/bzflag.wasm /app/public/
 COPY --from=wasm-build /src/build-emscripten/src/bzflag/bzflag.data /app/public/
 COPY --from=wasm-build /src/build-emscripten/src/bzflag/mock-server.js /app/public/
 
-# Copy native bzfs server
+# Copy native bzfs server and the webStats plugin
 COPY --from=server-build /src/build-server/src/bzfs/bzfs /usr/local/bin/bzfs
+COPY --from=server-build /src/build-server/plugins/webStats.so /usr/local/lib/bzflag/webStats.so
+
+# webStats web service (no npm dependencies)
+COPY plugins/webStats/web/server.js plugins/webStats/web/package.json /app/webstats/
+COPY plugins/webStats/web/lib /app/webstats/lib
+COPY plugins/webStats/web/public /app/webstats/public
 
 # Copy and install Node.js server
 COPY docker/server.mjs /app/server.mjs
@@ -63,6 +71,10 @@ RUN npm init -y && npm install ws
 
 ENV PORT=80
 ENV STATIC_DIR=/app/public
+ENV WEBSTATS_DIR=/app/webstats
+ENV DATA_DIR=/data
+# History, statistics and the push notification keys live here: keep it
+VOLUME /data
 EXPOSE 80
 
 CMD ["node", "server.mjs"]

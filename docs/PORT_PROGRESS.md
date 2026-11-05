@@ -73,8 +73,9 @@ docker run -p 8080:80 bzflag-web
 
 # Multiplayer (bundled bzfs server)
 docker build -f docker/Dockerfile.multiplayer -t bzflag-multiplayer .
-docker run -p 8080:8080 bzflag-multiplayer
+docker run -p 8080:80 -v bzflag-data:/data bzflag-multiplayer
 # Open http://localhost:8080
+# Statistics, history and notifications: http://localhost:8080/stats/
 ```
 
 ### Known limitations
@@ -139,6 +140,42 @@ docker run -p 8080:8080 bzflag-multiplayer
 
 ### CI/CD
 - `.github/workflows/emscripten-build.yml` — Docker image build + GHCR publish
+
+---
+
+## Server statistics in the multiplayer image (webStats)
+
+The multiplayer container also runs the webStats plugin and its web
+service (`plugins/webStats`), on the same port, under `/stats/`:
+
+- Live server log and searchable history
+- Who is online, recent games, per player statistics (kills, deaths, K/D,
+  captures, play time, victims, nemesis, flags, hours of activity)
+- Push notifications (Chrome, Firefox, Edge; iPhone from the home screen)
+  when the first player opens a game. They need the page on HTTPS: put a
+  reverse proxy with a certificate in front of the container.
+- A link from the lobby
+
+How it fits:
+```
+bzfs + webStats.so ──events (localhost, per run key)──→ webStats service (127.0.0.1:8081) ──→ /data (SQLite)
+Browser ──HTTP /stats/...──→ Node.js server (:8080) ──proxy──→ webStats service
+```
+
+- `docker/server.mjs` starts the web service before bzfs, writes the plugin
+  configuration with a key generated for the run, restarts the web service
+  if it dies, and stops both cleanly on `docker stop`
+- The plugin also appends every event to `/data/webstats.jsonl`; whatever
+  the web service missed is imported at the next start
+- `/stats/api/ingest` is not reachable from outside
+- Keep `/data` in a volume: it holds the history and the push notification
+  keys (losing them means everyone subscribes again)
+- Set `SERVER_NAME` (shown on the page) and `VAPID_SUBJECT`
+  (`mailto:` contact for the push services) with `docker run -e`
+- `WEBSTATS_DIR=` (empty) turns it off
+
+CMake builds plugins now (`plugins/CMakeLists.txt`, only webStats for now),
+and bzfs exports its symbols for them when `ENABLE_PLUGINS` is on.
 
 ---
 

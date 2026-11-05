@@ -1,0 +1,28 @@
+# systemd unit for a bzfs server with the webStats plugin.
+# Copy to /etc/systemd/system/bzfs.service (see INSTALL.ro.md)
+
+[Unit]
+Description=BZFlag server
+After=network-online.target webstats.service
+Wants=network-online.target webstats.service
+
+[Service]
+Type=simple
+User=bzflag
+Group=bzflag
+WorkingDirectory=/var/lib/bzflag
+ExecStart=/usr/local/bin/bzfs -conf /etc/bzflag/bzfs.conf
+Restart=on-failure
+RestartSec=5
+
+# creates /var/lib/bzflag, where the plugin writes its event file
+StateDirectory=bzflag
+StateDirectoryMode=0750
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
