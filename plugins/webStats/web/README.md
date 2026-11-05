@@ -32,6 +32,13 @@ Then load the plugin on bzfs with the same key (see `../webStats.cfg`):
 
 Keep `data/vapid.json`. If it is lost every browser has to subscribe again.
 
+## In the multiplayer Docker image
+
+`docker/Dockerfile.multiplayer` bundles the plugin and this service: the
+page is at `/stats/` on the game's port, with its data in `/data`. See
+`docs/PORT_PROGRESS.md` for the details. The pages only use relative URLs,
+so they work under such a prefix.
+
 ## HTTPS is required for notifications
 
 Browsers only allow push notifications on HTTPS pages (or `localhost`). Put

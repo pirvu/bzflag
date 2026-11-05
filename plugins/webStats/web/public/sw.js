@@ -14,19 +14,20 @@ self.addEventListener('push', (event) => {
     body: data.body || '',
     tag: data.tag,
     renotify: !!data.tag,
-    icon: '/icon.svg',
-    badge: '/icon.svg',
-    data: { url: data.url || '/' },
+    icon: 'icon.svg',
+    badge: 'icon.svg',
+    data: { url: data.url || '' },
   }));
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = new URL(event.notification.data?.url || '/', self.location.origin).href;
+  // relative to where the page lives, which may be a sub path like /stats/
+  const url = new URL(event.notification.data?.url || '', self.registration.scope).href;
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const client of windows) {
-      if (new URL(client.url).origin === self.location.origin) {
+      if (client.url.startsWith(self.registration.scope)) {
         await client.focus();
         return client.navigate(url);
       }

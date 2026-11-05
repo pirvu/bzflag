@@ -2,18 +2,28 @@
 // Single port handles both HTTP (static files) and WS (game traffic)
 // Serves custom index.html with player name entry and server config
 
-import { createServer } from 'http';
+import { createServer, request as httpRequest } from 'http';
 import { WebSocketServer } from 'ws';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { createConnection } from 'net';
-import { readFileSync, existsSync, statSync } from 'fs';
-import { createHash } from 'crypto';
+import { readFileSync, existsSync, statSync, mkdirSync, writeFileSync } from 'fs';
+import { createHash, randomBytes } from 'crypto';
+import { tmpdir } from 'os';
 import { join, extname } from 'path';
 
 const PORT = parseInt(process.env.PORT || '8080');
 const BZFS_PORT = parseInt(process.env.BZFS_PORT || '5154');
 const STATIC_DIR = process.env.STATIC_DIR || '/app/public';
 const BZFS_ARGS = (process.env.BZFS_ARGS || '-j +r -ms 10 -mp 20 -noMasterBanlist -noudp').split(' ');
+
+// webStats: server log, player statistics and push notifications at /stats/
+// (plugins/webStats). Off when WEBSTATS_DIR is empty or missing.
+const WEBSTATS_DIR = process.env.WEBSTATS_DIR || '';
+const WEBSTATS_PORT = parseInt(process.env.WEBSTATS_PORT || '8081');
+const WEBSTATS_PLUGIN = process.env.WEBSTATS_PLUGIN || '/usr/local/lib/bzflag/webStats.so';
+const DATA_DIR = process.env.DATA_DIR || '/data';
+const SERVER_NAME = process.env.SERVER_NAME || 'BZFlag';
+const webStatsEnabled = !!WEBSTATS_DIR && existsSync(join(WEBSTATS_DIR, 'server.js'));
 
 // Deterministic BUILD_ID from WASM content hash — same build = same cache key
 const wasmPath = join(STATIC_DIR, 'bzflag.wasm');
@@ -31,18 +41,103 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon',
 };
 
+// ── Start webStats ─────────────────────────────────────────────────
+// Only this container talks to it: it listens on localhost, and the plugin
+// sends a key generated for this run.
+const bzfsPluginArgs = [];
+let webStatsProcess = null;
+let stopping = false;
+if (webStatsEnabled) {
+  mkdirSync(DATA_DIR, { recursive: true });
+  const key = randomBytes(24).toString('hex');
+  const eventsFile = join(DATA_DIR, 'webstats.jsonl');
+  const env = {
+    ...process.env,
+    HOST: '127.0.0.1',
+    PORT: String(WEBSTATS_PORT),
+    DATA_DIR,
+    INGEST_KEY: key,
+  };
+  const nodeArgs = ['--disable-warning=ExperimentalWarning', join(WEBSTATS_DIR, 'server.js')];
+
+  // the plugin also writes every event to a file: pick up whatever the web
+  // service missed while it was down
+  if (existsSync(eventsFile)) {
+    spawnSync(process.execPath, [...nodeArgs, 'import', eventsFile], { env, stdio: 'inherit' });
+  }
+
+  const startWebStats = () => {
+    const ws = spawn(process.execPath, nodeArgs, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    webStatsProcess = ws;
+    ws.stdout.on('data', (d) => process.stdout.write(`[webstats] ${d}`));
+    ws.stderr.on('data', (d) => process.stderr.write(`[webstats] ${d}`));
+    // the game keeps running without it; try again shortly
+    ws.on('exit', (code) => {
+      if (stopping) return;
+      console.error(`[webstats] Exited with code ${code}, restarting in 5s`);
+      setTimeout(startWebStats, 5000);
+    });
+  };
+  startWebStats();
+
+  const cfg = join(tmpdir(), 'webStats.cfg');
+  writeFileSync(cfg, [
+    '[webStats]',
+    `  url = http://127.0.0.1:${WEBSTATS_PORT}/api/ingest`,
+    `  key = ${key}`,
+    `  file = ${eventsFile}`,
+    `  server = ${SERVER_NAME}`,
+    '',
+  ].join('\n'), { mode: 0o600 });
+  bzfsPluginArgs.push('-loadplugin', `${WEBSTATS_PLUGIN},${cfg}`);
+
+  // bzfs reports its start right away: let the web service come up first
+  for (let i = 0; i < 50 && !(await webStatsUp()); i++) await new Promise((r) => setTimeout(r, 100));
+}
+
+function webStatsUp() {
+  return new Promise((resolve) => {
+    const req = httpRequest({ host: '127.0.0.1', port: WEBSTATS_PORT, path: '/api/live', timeout: 500 }, (res) => {
+      res.resume();
+      resolve(res.statusCode === 200);
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.end();
+  });
+}
+
 // ── Start bzfs ─────────────────────────────────────────────────────
-console.log(`[bzfs] Starting: bzfs -p ${BZFS_PORT} ${BZFS_ARGS.join(' ')}`);
-const bzfs = spawn('bzfs', ['-p', String(BZFS_PORT), ...BZFS_ARGS], {
+const allBzfsArgs = ['-p', String(BZFS_PORT), ...BZFS_ARGS, ...bzfsPluginArgs];
+console.log(`[bzfs] Starting: bzfs ${allBzfsArgs.join(' ')}`);
+const bzfs = spawn('bzfs', allBzfsArgs, {
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 
 bzfs.stdout.on('data', (d) => process.stdout.write(`[bzfs] ${d}`));
 bzfs.stderr.on('data', (d) => process.stderr.write(`[bzfs] ${d}`));
 bzfs.on('exit', (code) => {
+  if (stopping) return;
   console.error(`[bzfs] Exited with code ${code}`);
   process.exit(1);
 });
+
+// docker stop: let bzfs and webStats finish (webStats closes its database)
+function shutdown() {
+  if (stopping) return;
+  stopping = true;
+  console.log('[server] Stopping');
+  const children = [bzfs, webStatsProcess].filter((c) => c && c.exitCode === null);
+  if (!children.length) process.exit(0);
+  let left = children.length;
+  for (const c of children) {
+    c.on('exit', () => { if (--left === 0) process.exit(0); });
+    c.kill('SIGTERM');
+  }
+  setTimeout(() => process.exit(0), 5000).unref();
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
 
 // Build the custom index.html with lobby + game
 function buildIndexHtml() {
@@ -79,6 +174,7 @@ function buildIndexHtml() {
   #play-solo { background: #555; }
   #play-solo:hover { background: #666; }
   #lobby .info { margin-top: 1.5rem; color: #666; font-size: 0.8rem; }
+  #lobby .stats-link { margin-top: 1rem; color: #4a9eff; font-size: 0.9rem; }
 
   #game-container { display: none; width: 100%; height: 100%; }
   #canvas { display: block; width: 100%; height: 100%; outline: none; }
@@ -127,6 +223,7 @@ function buildIndexHtml() {
     <button id="play-solo" class="play-btn">Solo + Bots</button>
   </div>
   <div class="info">Jump: Tab &bull; Shoot: Enter &bull; Move: Arrow keys</div>
+  ${webStatsEnabled ? '<a class="stats-link" href="stats/">Statistics, history &amp; notifications</a>' : ''}
 </div>
 
 <!-- Loading screen -->
@@ -394,9 +491,44 @@ const COMMON_HEADERS = {
   'Cross-Origin-Embedder-Policy': 'require-corp',
 };
 
+// ── webStats proxy ─────────────────────────────────────────────────
+// /stats/... goes to the web service, without the prefix. Its pages use
+// relative URLs, so they work under it.
+function proxyWebStats(req, res) {
+  const path = req.url.slice('/stats'.length) || '/';
+  // events only come from the plugin, never from outside
+  if (path.startsWith('/api/ingest')) {
+    res.writeHead(404);
+    res.end();
+    return;
+  }
+  const headers = { ...req.headers, 'x-forwarded-for': req.socket.remoteAddress || '' };
+  const upstream = httpRequest({ host: '127.0.0.1', port: WEBSTATS_PORT, method: req.method, path, headers }, (up) => {
+    res.writeHead(up.statusCode, up.headers);
+    up.pipe(res);
+  });
+  upstream.on('error', () => {
+    if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain' });
+    res.end('Statistics are not available right now');
+  });
+  req.pipe(upstream);
+  // the live log is a long request: drop it with the client
+  res.on('close', () => upstream.destroy());
+}
+
 // ── HTTP server ────────────────────────────────────────────────────
 const server = createServer((req, res) => {
   const urlPath = req.url.split('?')[0];
+
+  if (webStatsEnabled && urlPath === '/stats') {
+    res.writeHead(301, { Location: '/stats/' });
+    res.end();
+    return;
+  }
+  if (webStatsEnabled && urlPath.startsWith('/stats/')) {
+    proxyWebStats(req, res);
+    return;
+  }
 
   if (urlPath === '/' || urlPath === '/index.html') {
     res.writeHead(200, {

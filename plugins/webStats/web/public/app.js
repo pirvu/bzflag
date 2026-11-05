@@ -146,7 +146,7 @@ function scheduleLiveRefresh() {
 }
 
 async function loadLive() {
-  const data = await api('/api/live');
+  const data = await api('api/live');
   const s = data.summary;
   $('#summary').innerHTML = [
     ['Online', data.online.filter((p) => p.team !== 'observer').length],
@@ -178,7 +178,7 @@ async function loadLive() {
 }
 
 async function loadLiveLog() {
-  const events = await api('/api/events?limit=60&types=' + encodeURIComponent(
+  const events = await api('api/events?limit=60&types=' + encodeURIComponent(
     'join,part,game-open,game-empty,kill,capture,chat,server-start,server-stop,match-start,match-end'));
   const list = $('#live-log');
   list.innerHTML = '';
@@ -188,7 +188,7 @@ async function loadLiveLog() {
 const REFRESH_TYPES = new Set(['join', 'part', 'game-open', 'game-empty', 'server-start', 'server-stop', 'kill']);
 
 function connectStream() {
-  const source = new EventSource('/api/stream');
+  const source = new EventSource('api/stream');
   source.onopen = () => $('#live-dot').classList.add('on');
   source.onerror = () => $('#live-dot').classList.remove('on');
   source.onmessage = (msg) => {
@@ -212,7 +212,7 @@ async function loadHistory(reset) {
   if (logState.player) params.set('player', logState.player);
   if (!reset && logState.before) params.set('before', logState.before);
   try {
-    const events = await api('/api/events?' + params);
+    const events = await api('api/events?' + params);
     const list = $('#history-log');
     if (reset) list.innerHTML = '';
     appendEvents(list, events);
@@ -240,7 +240,7 @@ async function loadPlayers() {
   const form = $('#player-filters');
   const params = new URLSearchParams({ sort: form.sort.value });
   if (form.days.value) params.set('days', form.days.value);
-  const players = await api('/api/players?' + params);
+  const players = await api('api/players?' + params);
   $('#players').innerHTML = players.length ? players.map((p, i) => `<tr>
     <td class="muted">${i + 1}</td>
     <td><a href="#player/${encodeURIComponent(p.key)}">${esc(p.callsign)}</a>${p.bzid ? ' <span class="muted small" title="cont verificat">✓</span>' : ''}</td>
@@ -306,7 +306,7 @@ async function loadPlayer(key) {
   root.innerHTML = '<p class="muted">Se încarcă…</p>';
   let data;
   try {
-    data = await api('/api/players/' + encodeURIComponent(key));
+    data = await api('api/players/' + encodeURIComponent(key));
   } catch {
     root.innerHTML = '<div class="card"><p>Jucător necunoscut.</p></div>';
     return;
@@ -376,7 +376,7 @@ async function pushSubscribe() {
   $('#push-on').disabled = true;
   try {
     if (await Notification.requestPermission() !== 'granted') return;
-    const { key } = await api('/api/push/key');
+    const { key } = await api('api/push/key');
     let sub = await swRegistration.pushManager.getSubscription();
     if (!sub) {
       sub = await swRegistration.pushManager.subscribe({
@@ -384,7 +384,7 @@ async function pushSubscribe() {
         applicationServerKey: urlBase64ToUint8Array(key),
       });
     }
-    await api('/api/push/subscribe', {
+    await api('api/push/subscribe', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub),
     });
   } catch (err) {
@@ -399,7 +399,7 @@ async function pushSubscribe() {
 async function pushUnsubscribe() {
   const sub = await swRegistration.pushManager.getSubscription();
   if (sub) {
-    await api('/api/push/unsubscribe', {
+    await api('api/push/unsubscribe', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: sub.endpoint }),
     }).catch(() => {});
     await sub.unsubscribe();
@@ -411,7 +411,7 @@ async function pushTest() {
   const sub = await swRegistration.pushManager.getSubscription();
   if (!sub) return;
   try {
-    await api('/api/push/test', {
+    await api('api/push/test', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub),
     });
     $('#push-status').textContent = 'Test trimis. Ar trebui să apară o notificare.';
@@ -444,7 +444,7 @@ async function route() {
       const player = params.get('player');
       setHistoryPlayer(player, player ? player.replace(/^(bz|cs):/, '') : null);
       if (player) {
-        api('/api/players/' + encodeURIComponent(player))
+        api('api/players/' + encodeURIComponent(player))
           .then((d) => setHistoryPlayer(player, d.player.callsign)).catch(() => {});
       }
       await loadHistory(true);
@@ -471,7 +471,7 @@ $('#push-test').addEventListener('click', pushTest);
 window.addEventListener('hashchange', route);
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js')
+  navigator.serviceWorker.register('sw.js')
     .then((reg) => { swRegistration = reg; if (currentView === 'notify') pushState(); })
     .catch((err) => console.warn('service worker', err));
 }

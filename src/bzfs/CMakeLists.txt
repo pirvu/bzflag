@@ -67,6 +67,8 @@ add_executable(bzfs
 
 if(ENABLE_PLUGINS)
     target_sources(bzfs PRIVATE bzfsPlugins.cxx)
+    # plugins call back into the bz_* API of the executable
+    set_target_properties(bzfs PROPERTIES ENABLE_EXPORTS ON)
 endif()
 
 target_include_directories(bzfs PRIVATE

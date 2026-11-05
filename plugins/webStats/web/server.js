@@ -87,7 +87,7 @@ function gameOpenNotification(ev) {
     title: 'BZFlag: a început un joc',
     body: `${ev.callsign} a intrat pe ${where}`,
     tag: `game-open:${ev.server}`,
-    url: '/#live',
+    url: '#live',
   };
 }
 
@@ -272,7 +272,7 @@ async function route(req, res) {
       if (!known) return send(res, 404, { error: 'not subscribed' });
       try {
         const result = await sendPush(known, {
-          title: 'BZFlag', body: 'Notificările funcționează!', tag: 'test', url: '/#live',
+          title: 'BZFlag', body: 'Notificările funcționează!', tag: 'test', url: '#live',
         }, vapid, config.vapidSubject);
         return send(res, result.ok ? 200 : 502, result);
       } catch (err) {

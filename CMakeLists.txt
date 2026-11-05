@@ -114,3 +114,6 @@ include_directories(
 
 # Subdirectories
 add_subdirectory(src)
+if(ENABLE_PLUGINS)
+    add_subdirectory(plugins)
+endif()
