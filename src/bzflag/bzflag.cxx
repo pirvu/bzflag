@@ -113,6 +113,26 @@ EM_JS(void, saveConfigToLocalStorage, (const char* path), {
         console.warn('Could not save config to localStorage:', e);
     }
 });
+
+// The touch controls of the web page press these joystick buttons (see
+// TouchJoystick). Bind them, unless the player bound those buttons already.
+static void bindTouchButtons()
+{
+    static const char* touchBindings[][2] =
+    {
+        { "Joystick Button 1", "fire" },
+        { "Joystick Button 2", "jump" },
+        { "Joystick Button 3", "drop" },
+        { "Joystick Button 4", "toggle displayScore" },
+        { "Joystick Button 5", "restart" },
+    };
+    for (const auto &binding : touchBindings)
+    {
+        BzfKeyEvent key;
+        if (KEYMGR.stringToKeyEvent(binding[0], key) && KEYMGR.get(key, true).empty())
+            ActionBinding::instance().associate(binding[0], binding[1], true);
+    }
+}
 #endif
 
 // defaults for bzdb
@@ -850,6 +870,9 @@ int         main(int argc, char** argv)
     else
         // bind default keys
         ActionBinding::instance().resetBindings();
+#ifdef __EMSCRIPTEN__
+    bindTouchButtons();
+#endif
 
     ServerListCache::get()->loadCache();
 

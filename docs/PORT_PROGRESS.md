@@ -89,6 +89,50 @@ docker run -p 8080:8080 bzflag-multiplayer
 
 ---
 
+## Phase 3 — Mobile Touch Controls — ✅ Complete
+
+Phones and tablets get on screen controls over the game, in solo and
+multiplayer. They are on by default on touch screens; `?touch=1` forces them
+on, `?touch=0` off.
+
+### What works
+- Floating stick on the left half: drive and turn, analog
+- FIRE, JUMP and FLAG (drop) buttons on the right, usable while driving
+- START button while the HUD asks the player to start (after joining or dying)
+- SCORE toggles the scoreboard
+- TILT: steer and drive by tilting the device, calibrated to the way it is
+  held when TILT is turned on; remembered between visits (iOS asks again)
+- Menu button opens the game menu; a pad (arrows, OK, BACK) replaces the
+  driving controls while a menu is up
+- Full screen button, with landscape lock where the browser allows it
+- Touches never reach the game as emulated mouse events, so the tank does
+  not switch to mouse steering
+- The config is also saved on `pagehide`, which mobile browsers fire when
+  `beforeunload` is skipped
+
+### Architecture
+```
+web/touch-controls.js ── stick / tilt / buttons ──→ _bzf_touch_axes / _bzf_touch_buttons
+                                                      │
+                                    TouchJoystick (src/platform) — the game's joystick
+                                                      │
+                          existing joystick input path in playing.cxx (analog driving,
+                          "Joystick Button N" bindings: fire, jump, drop, score, restart)
+web/touch-controls.js ── menu pad ──→ synthetic key events (Escape, arrows, Enter)
+web/touch-controls.js ←── _bzf_menu_active / _bzf_waiting_to_start ── playing.cxx
+```
+
+`TouchJoystick` wraps the SDL joystick, so a real gamepad still works. The
+touch buttons are bound in `bindTouchButtons()` (bzflag.cxx) only when the
+player has not bound those joystick buttons already.
+
+### Known limitations
+- No chat input on touch screens yet
+- Tilt directions are verified in an emulator; real devices may need
+  tuning of `TILT_FULL` / `TILT_DEAD` in `web/touch-controls.js`
+
+---
+
 ## Files created/modified
 
 ### New files (build system)
@@ -102,6 +146,7 @@ docker run -p 8080:8080 bzflag-multiplayer
 - `web/shell.html` — Custom Emscripten HTML shell (solo mode)
 - `web/mock-server.js` — JS BZFlag server (~1100 lines)
 - `tools/ws-proxy/proxy.mjs` — WebSocket-to-TCP proxy for real servers
+- `web/touch-controls.js` — Touch controls for phones and tablets
 
 ### New files (multiplayer)
 - `docker/Dockerfile.multiplayer` — Multi-stage: WASM + native bzfs + Node.js
@@ -114,6 +159,7 @@ docker run -p 8080:8080 bzflag-multiplayer
 - `src/ogl/OpenGLVertexBuffer.cxx` — Interleaved static vertex buffers (display list replacement)
 - `src/common/cURLManager_stub.cxx` — HTTP stub
 - `src/net/AresHandler_stub.cxx`, `Ping_stub.cxx`, `multicast_stub.cxx`
+- `src/platform/TouchJoystick.cxx` — Joystick fed by the touch controls
 
 ### Modified source files (Emscripten guards)
 - `include/bzfgl.h` — Skip GLEW
@@ -157,7 +203,7 @@ docker run -p 8080:8080 bzflag-multiplayer
 
 ### Medium priority
 3. **Progressive asset loading** — Lazy-load non-essential sounds/textures
-4. **Mobile touch controls**
+4. **Chat on touch screens** — On screen keyboard for messages
 
 ### Lower priority
 5. **Native WebSocket in bzfs** — Eliminate proxy for real servers
