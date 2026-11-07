@@ -20,7 +20,9 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #endif
+#ifndef __EMSCRIPTEN__
 #include <curl/curl.h>
+#endif
 #include <string>
 #include <string.h>
 #include <algorithm>
@@ -276,6 +278,7 @@ bool parseDuration(const char *duration, int &durationInt)
 std::string url_encode(const std::string &text)
 {
     std::string encoded = "";
+#ifndef __EMSCRIPTEN__
     char *output = curl_easy_escape(NULL, text.c_str(), 0);
 
     if (output)
@@ -283,6 +286,23 @@ std::string url_encode(const std::string &text)
         encoded = output;
         curl_free(output);
     }
+#else
+    // Minimal URL-encode for Emscripten (no libcurl).
+    static const char hex[] = "0123456789ABCDEF";
+    for (unsigned char c : text)
+    {
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                || (c >= '0' && c <= '9')
+                || c == '-' || c == '_' || c == '.' || c == '~')
+            encoded.push_back((char)c);
+        else
+        {
+            encoded.push_back('%');
+            encoded.push_back(hex[c >> 4]);
+            encoded.push_back(hex[c & 0xF]);
+        }
+    }
+#endif
 
     return encoded;
 }
@@ -290,6 +310,7 @@ std::string url_encode(const std::string &text)
 std::string url_decode(const std::string &text)
 {
     std::string decoded = "";
+#ifndef __EMSCRIPTEN__
     char *output = curl_easy_unescape(NULL, text.c_str(), 0, NULL);
 
     if (output)
@@ -297,6 +318,28 @@ std::string url_decode(const std::string &text)
         decoded = output;
         curl_free(output);
     }
+#else
+    for (size_t i = 0; i < text.size(); ++i)
+    {
+        char c = text[i];
+        if (c == '%' && i + 2 < text.size())
+        {
+            auto h = [](char x) -> int
+            {
+                if (x >= '0' && x <= '9') return x - '0';
+                if (x >= 'a' && x <= 'f') return 10 + x - 'a';
+                if (x >= 'A' && x <= 'F') return 10 + x - 'A';
+                return 0;
+            };
+            decoded.push_back((char)((h(text[i+1]) << 4) | h(text[i+2])));
+            i += 2;
+        }
+        else if (c == '+')
+            decoded.push_back(' ');
+        else
+            decoded.push_back(c);
+    }
+#endif
 
     return decoded;
 }

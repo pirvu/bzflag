@@ -84,20 +84,48 @@ private:
 
 inline void WaveGeometry::executeNoList() const
 {
+#ifdef __EMSCRIPTEN__
+    // Interleave position and texcoord so the GL emulation can take its
+    // fast single-array path instead of re-striding separate arrays.
+    const int count = (flagChunks + 1) * 2;
+    static GLfloat interleaved[maxChunks * 2][5];
+    for (int i = 0; i < count; i++)
+    {
+        interleaved[i][0] = verts[i][0];
+        interleaved[i][1] = verts[i][1];
+        interleaved[i][2] = verts[i][2];
+        interleaved[i][3] = txcds[i][0];
+        interleaved[i][4] = txcds[i][1];
+    }
+    const GLsizei stride = 5 * sizeof(GLfloat);
+    glDisableClientState(GL_NORMAL_ARRAY);
+    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    glVertexPointer(3, GL_FLOAT, stride, &interleaved[0][0]);
+    glTexCoordPointer(2, GL_FLOAT, stride, &interleaved[0][3]);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, count);
+    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    return;
+#else
     glDisableClientState(GL_NORMAL_ARRAY);
     glVertexPointer(3, GL_FLOAT, 0, verts);
     glTexCoordPointer(2, GL_FLOAT, 0, txcds);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, (flagChunks + 1) * 2);
     glEnableClientState(GL_NORMAL_ARRAY);
     return;
+#endif
 }
 
 inline void WaveGeometry::execute() const
 {
+#ifdef __EMSCRIPTEN__
+    // no display lists, whatever the flagLists setting says
+    executeNoList();
+#else
     if (flagLists)
         glCallList(glList);
     else
         executeNoList();
+#endif
     return;
 }
 
@@ -172,6 +200,9 @@ void WaveGeometry::waveFlag(float dt)
     }
 
     // make a GL display list if desired
+#ifdef __EMSCRIPTEN__
+    glList = INVALID_GL_LIST_ID;
+#else
     if (flagLists)
     {
         glList = glGenLists(1);
@@ -181,6 +212,7 @@ void WaveGeometry::waveFlag(float dt)
     }
     else
         glList = INVALID_GL_LIST_ID;
+#endif
 
     triCount = flagChunks * 2;
 

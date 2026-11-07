@@ -17,11 +17,18 @@
 
 #include "common.h"
 
+#ifdef __EMSCRIPTEN__
+#define GL_GLEXT_PROTOTYPES 1
+#include <GL/gl.h>
+#include <GL/glext.h>
+#include <GL/glu.h>
+#else
 #include <GL/glew.h>
 
 #ifndef GL_VERSION_1_1
 # error OpenGL version 1.1 functionality is required
 #endif
+#endif /* __EMSCRIPTEN__ */
 
 
 /* These will track glBegin/End pairs to make sure that they match */

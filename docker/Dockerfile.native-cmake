@@ -1,0 +1,24 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        cmake \
+        make \
+        g++ \
+        pkg-config \
+        git \
+        ca-certificates \
+        libsdl2-dev \
+        libglew-dev \
+        libglu1-mesa-dev \
+        libcurl4-openssl-dev \
+        libc-ares-dev \
+        zlib1g-dev \
+        libncurses-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --create-home --shell /bin/bash builder
+USER builder
+
+WORKDIR /src

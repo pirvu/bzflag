@@ -105,6 +105,9 @@ void            OpenGLMaterial::Rep::unref()
 
 void            OpenGLMaterial::Rep::execute()
 {
+#ifdef __EMSCRIPTEN__
+    // no-op under Emscripten: most material pnames cause TODO errors in GL emulation
+#else
     if (list != INVALID_GL_LIST_ID)
         glCallList(list);
     else
@@ -121,18 +124,17 @@ void            OpenGLMaterial::Rep::execute()
                         (specular[1] > 0.0f) ||
                         (specular[2] > 0.0f))
                 {
-                    // accurate specular highlighting  (more GPU intensive)
                     glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
                 }
                 else
                 {
-                    // speed up the lighting calcs by simplifying
                     glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_FALSE);
                 }
             }
         }
         glEndList();
     }
+#endif
     return;
 }
 

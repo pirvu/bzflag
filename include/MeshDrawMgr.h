@@ -21,6 +21,7 @@
 // common interface headers
 #include "bzfgl.h"
 #include "MeshDrawInfo.h"
+#include "OpenGLVertexBuffer.h"
 
 class MeshDrawMgr
 {
@@ -44,6 +45,25 @@ private:
 
     using LodList = std::vector<int>;
     std::vector<LodList> lodLists;
+
+#ifdef __EMSCRIPTEN__
+    // No display lists under WebGL: the vertices live in one buffer and
+    // each draw set's commands are converted once to 16-bit indices (the
+    // GL emulation only takes GL_UNSIGNED_SHORT and has no quads or
+    // polygons for indexed drawing).
+    struct IndexedCmd
+    {
+        GLenum mode;
+        std::vector<GLushort> indices;
+    };
+    using IndexedSet = std::vector<IndexedCmd>;
+
+    void makeBuffers();
+    void executeBuffered(int lod, int set, bool useNormals, bool useTexcoords);
+
+    OpenGLVertexBuffer vbo;
+    std::vector<std::vector<IndexedSet>> indexedSets; // [lod][set]
+#endif
 };
 
 

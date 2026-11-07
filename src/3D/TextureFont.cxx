@@ -39,6 +39,7 @@ TextureFont::TextureFont()
 
 TextureFont::~TextureFont()
 {
+#ifndef __EMSCRIPTEN__
     for (int i = 0; i < MAX_TEXTURE_FONT_CHARS; i++)
     {
         if (listIDs[i] != INVALID_GL_LIST_ID)
@@ -47,6 +48,7 @@ TextureFont::~TextureFont()
             listIDs[i] = INVALID_GL_LIST_ID;
         }
     }
+#endif
 }
 
 void TextureFont::build(void)
@@ -77,51 +79,22 @@ void TextureFont::preLoadLists()
     // fonts are usually pixel aligned
     tm.setTextureFilter(textureID, OpenGLTexture::Nearest);
 
+#ifndef __EMSCRIPTEN__
     for (int i = 0; i < numberOfCharacters; i++)
     {
         if (listIDs[i] != INVALID_GL_LIST_ID)
         {
             glDeleteLists(listIDs[i], 1);
-            listIDs[i] = INVALID_GL_LIST_ID; // make it a habit
+            listIDs[i] = INVALID_GL_LIST_ID;
         }
         listIDs[i] = glGenLists(1);
         glNewList(listIDs[i], GL_COMPILE);
         {
-            const float initiX = (float)fontMetrics[i].initialDist;
-            const float fFontY = (float)(fontMetrics[i].endY
-                                         - fontMetrics[i].startY);
-            const float fFontX = (float)(fontMetrics[i].endX
-                                         - fontMetrics[i].startX);
-            const float startX = (float)fontMetrics[i].startX
-                                 / (float)textureXSize;
-            const float endX   = (float)fontMetrics[i].endX
-                                 / (float)textureXSize;
-            const float startY = (float)fontMetrics[i].startY
-                                 / (float)textureYSize;
-            const float endY   = (float)fontMetrics[i].endY
-                                 / (float)textureYSize;
-
-            glBegin(GL_TRIANGLE_STRIP);
-            glNormal3f(0.0f, 0.0f, 1.0f);
-            glTexCoord2f(startX, 1.0f - startY);
-            glVertex3f(initiX, fFontY, 0.0f);
-
-            glTexCoord2f(startX, 1.0f - endY);
-            glVertex3f(initiX, 0.0f, 0.0f);
-
-            glTexCoord2f(endX, 1.0f - startY);
-            glVertex3f(initiX + fFontX, fFontY, 0.0f);
-
-            glTexCoord2f(endX, 1.0f - endY);
-            glVertex3f(initiX + fFontX, 0.0f, 0.0f);
-            glEnd();
-
-            float fFontPostX = (float)(fontMetrics[i].fullWidth);
-
-            glTranslatef(fFontPostX, 0.0f, 0.0f);
+            renderGlyph(i);
         }
         glEndList();
     }
+#endif
 
     // create GState
     OpenGLGStateBuilder builder(gstate);
@@ -148,6 +121,68 @@ void TextureFont::filter(bool dofilter)
     }
 }
 
+void TextureFont::renderGlyph(int i)
+{
+    const float initiX = (float)fontMetrics[i].initialDist;
+    const float fFontY = (float)(fontMetrics[i].endY
+                                 - fontMetrics[i].startY);
+    const float fFontX = (float)(fontMetrics[i].endX
+                                 - fontMetrics[i].startX);
+    const float startX = (float)fontMetrics[i].startX
+                         / (float)textureXSize;
+    const float endX   = (float)fontMetrics[i].endX
+                         / (float)textureXSize;
+    const float startY = (float)fontMetrics[i].startY
+                         / (float)textureYSize;
+    const float endY   = (float)fontMetrics[i].endY
+                         / (float)textureYSize;
+
+    glBegin(GL_TRIANGLE_STRIP);
+#ifndef __EMSCRIPTEN__
+    glNormal3f(0.0f, 0.0f, 1.0f);
+#endif
+    glTexCoord2f(startX, 1.0f - startY);
+    glVertex3f(initiX, fFontY, 0.0f);
+
+    glTexCoord2f(startX, 1.0f - endY);
+    glVertex3f(initiX, 0.0f, 0.0f);
+
+    glTexCoord2f(endX, 1.0f - startY);
+    glVertex3f(initiX + fFontX, fFontY, 0.0f);
+
+    glTexCoord2f(endX, 1.0f - endY);
+    glVertex3f(initiX + fFontX, 0.0f, 0.0f);
+    glEnd();
+
+    float fFontPostX = (float)(fontMetrics[i].fullWidth);
+
+    glTranslatef(fFontPostX, 0.0f, 0.0f);
+}
+
+#ifdef __EMSCRIPTEN__
+// Append the quad of glyph i, starting at x, as two triangles of
+// interleaved position (3 floats) and texcoord (2 floats).
+void TextureFont::appendGlyph(int i, float x, std::vector<GLfloat>& verts) const
+{
+    const float x0 = x + (float)fontMetrics[i].initialDist;
+    const float x1 = x0 + (float)(fontMetrics[i].endX - fontMetrics[i].startX);
+    const float y1 = (float)(fontMetrics[i].endY - fontMetrics[i].startY);
+    const float u0 = (float)fontMetrics[i].startX / (float)textureXSize;
+    const float u1 = (float)fontMetrics[i].endX / (float)textureXSize;
+    const float v0 = 1.0f - (float)fontMetrics[i].startY / (float)textureYSize;
+    const float v1 = 1.0f - (float)fontMetrics[i].endY / (float)textureYSize;
+
+    // same corners as the triangle strip in renderGlyph()
+    const GLfloat quad[6][5] =
+    {
+        { x0, y1, 0.0f, u0, v0 }, { x0, 0.0f, 0.0f, u0, v1 }, { x1, y1, 0.0f, u1, v0 },
+        { x1, y1, 0.0f, u1, v0 }, { x0, 0.0f, 0.0f, u0, v1 }, { x1, 0.0f, 0.0f, u1, v1 }
+    };
+    verts.insert(verts.end(), &quad[0][0], &quad[0][0] + 6 * 5);
+}
+#endif
+
+
 void TextureFont::drawString(float scale, GLfloat color[4], const char *str,
                              int len)
 {
@@ -172,6 +207,14 @@ void TextureFont::drawString(float scale, GLfloat color[4], const char *str,
     glPushMatrix();
     glScalef(scale, scale, 1);
 
+#ifdef __EMSCRIPTEN__
+    // No display lists: draw the whole string with one call instead of a
+    // glBegin/glEnd and a glTranslatef per character, each of which is a
+    // separate upload and draw in the GL emulation.
+    static std::vector<GLfloat> verts;
+    verts.clear();
+    float x = 0.0f;
+#endif
     int charToUse = 0;
     for (int i = 0; i < len; i++)
     {
@@ -185,11 +228,28 @@ void TextureFont::drawString(float scale, GLfloat color[4], const char *str,
 
         charToUse -= space;
 
+#ifdef __EMSCRIPTEN__
+        if (charToUse != 0)
+            appendGlyph(charToUse, x, verts);
+        x += (float)fontMetrics[charToUse].fullWidth;
+#else
         if (charToUse == 0)
             glTranslatef((float)(fontMetrics[charToUse].fullWidth), 0.0f, 0.0f);
         else
             glCallList(listIDs[charToUse]);
+#endif
     }
+#ifdef __EMSCRIPTEN__
+    if (!verts.empty())
+    {
+        const GLsizei stride = 5 * sizeof(GLfloat);
+        glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+        glVertexPointer(3, GL_FLOAT, stride, &verts[0]);
+        glTexCoordPointer(2, GL_FLOAT, stride, &verts[3]);
+        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(verts.size() / 5));
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    }
+#endif
     glPopMatrix();
     if (color[0] >= 0)
         glColor4f(1, 1, 1, 1);

@@ -578,8 +578,10 @@ void RadarRenderer::render(SceneRenderer& renderer, bool blank, bool observer)
         if (smooth)
         {
             glEnable(GL_BLEND);
+#ifndef __EMSCRIPTEN__
             glEnable(GL_LINE_SMOOTH);
             glEnable(GL_POINT_SMOOTH);
+#endif
         }
 
         // draw my shots
@@ -779,8 +781,10 @@ void RadarRenderer::render(SceneRenderer& renderer, bool blank, bool observer)
             glRectf(-radarRange, -radarRange, +radarRange, +radarRange);
         }
         glDisable(GL_BLEND);
+#ifndef __EMSCRIPTEN__
         glDisable(GL_LINE_SMOOTH);
         glDisable(GL_POINT_SMOOTH);
+#endif
     }
 
     triangleCount = RenderNode::getTriangleCount();
@@ -843,7 +847,9 @@ void RadarRenderer::renderObstacles(bool fastRadar, float _range)
     if (smooth)
     {
         glEnable(GL_BLEND);
+#ifndef __EMSCRIPTEN__
         glEnable(GL_LINE_SMOOTH);
+#endif
     }
 
     // draw the walls
@@ -861,7 +867,9 @@ void RadarRenderer::renderObstacles(bool fastRadar, float _range)
     if (smooth)
     {
         glDisable(GL_BLEND);
+#ifndef __EMSCRIPTEN__
         glDisable(GL_LINE_SMOOTH);
+#endif
     }
 
     return;
@@ -938,6 +946,7 @@ void RadarRenderer::renderBoxPyrMeshFast(float _range)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
 
     // do this after the GState setting
+#ifndef __EMSCRIPTEN__
     if (smooth)
         glEnable(GL_POLYGON_SMOOTH);
 
@@ -951,6 +960,7 @@ void RadarRenderer::renderBoxPyrMeshFast(float _range)
 
     // setup texture generation
     glEnable(GL_TEXTURE_GEN_S);
+#endif
 
     // set the color
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
@@ -963,8 +973,10 @@ void RadarRenderer::renderBoxPyrMeshFast(float _range)
 //    RENDERER.getSceneDatabase()->renderRadarNodes(RENDERER.getViewFrustum());
 //  }
 
+#ifndef __EMSCRIPTEN__
     // restore texture generation
     glDisable(GL_TEXTURE_GEN_S);
+#endif
 
     OpenGLGState::resetState();
 
@@ -976,8 +988,10 @@ void RadarRenderer::renderBoxPyrMeshFast(float _range)
     if (smooth)
     {
         glEnable(GL_BLEND);
+#ifndef __EMSCRIPTEN__
         glEnable(GL_LINE_SMOOTH);
         glDisable(GL_POLYGON_SMOOTH);
+#endif
     }
 
     return;
@@ -1056,8 +1070,10 @@ void RadarRenderer::renderBoxPyrMesh()
     }
 
     // draw mesh obstacles
+#ifndef __EMSCRIPTEN__
     if (smooth)
         glEnable(GL_POLYGON_SMOOTH);
+#endif
     if (!enhanced)
         glDisable(GL_CULL_FACE);
     const ObstacleList& meshes = OBSTACLEMGR.getMeshes();
@@ -1107,8 +1123,10 @@ void RadarRenderer::renderBoxPyrMesh()
     }
     if (!enhanced)
         glEnable(GL_CULL_FACE);
+#ifndef __EMSCRIPTEN__
     if (smooth)
         glDisable(GL_POLYGON_SMOOTH);
+#endif
 
     // NOTE: revert from the enhanced setting
     if (enhanced && !smooth)

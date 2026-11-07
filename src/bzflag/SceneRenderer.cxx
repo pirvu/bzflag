@@ -136,8 +136,14 @@ void SceneRenderer::setWindow(MainWindow* _window)
     canUseHiddenLine = true;
 
     // prepare context with stuff that'll never change
+#ifndef __EMSCRIPTEN__
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);
+#endif
+#ifndef __EMSCRIPTEN__
     glGetIntegerv(GL_MAX_LIGHTS, &maxLights);
+#else
+    maxLights = 8;
+#endif
     reservedLights = 1;           // only one light between sun and moon
     maxLights -= reservedLights;      // can't use the reserved lights
 
@@ -223,6 +229,7 @@ void SceneRenderer::setQuality(int value)
 
     notifyStyleChange();
 
+#ifndef __EMSCRIPTEN__
     if (useQualityValue >= 1)
     {
         glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
@@ -237,6 +244,7 @@ void SceneRenderer::setQuality(int value)
         glHint(GL_POINT_SMOOTH_HINT, GL_FASTEST);
         glHint(GL_POLYGON_SMOOTH_HINT, GL_FASTEST);
     }
+#endif
 
     if (useQualityValue >= 2)
         TankSceneNode::setMaxLOD(-1);
@@ -259,6 +267,7 @@ void SceneRenderer::setQuality(int value)
     else
         BZDB.set("moonSegments","12");
 
+#ifndef __EMSCRIPTEN__
     if (useQualityValue > 0)
     {
         // this can be modified by OpenGLMaterial
@@ -289,6 +298,7 @@ void SceneRenderer::setQuality(int value)
                       GL_SINGLE_COLOR_EXT);
 #  endif
 #endif
+#endif // __EMSCRIPTEN__
 
     BZDB.set("useQuality", TextUtils::format("%d", value));
 }
@@ -815,13 +825,19 @@ void SceneRenderer::render(bool _lastFrame, bool _sameFrame,
             float stipple = mirrorColor[3];
             glColor3fv(mirrorColor);
             OpenGLGState::setStipple(stipple);
+#ifndef __EMSCRIPTEN__
             glEnable(GL_POLYGON_STIPPLE);
+#endif
         }
         glRectf(-extent, -extent, +extent, +extent);
         if (BZDBCache::blend && (useQualityValue >= 1))
             glDisable(GL_BLEND);
         else
+        {
+#ifndef __EMSCRIPTEN__
             glDisable(GL_POLYGON_STIPPLE);
+#endif
+        }
         if (mapFog)
         {
             glMatrixMode(GL_PROJECTION);
@@ -909,7 +925,9 @@ void SceneRenderer::renderScene(bool UNUSED(_lastFrame), bool UNUSED(_sameFrame)
             glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
             glClear(GL_COLOR_BUFFER_BIT);
         }
+#ifndef __EMSCRIPTEN__
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+#endif
     }
 
     // prepare z buffer
@@ -939,8 +957,10 @@ void SceneRenderer::renderScene(bool UNUSED(_lastFrame), bool UNUSED(_sameFrame)
     // draw start of background (no depth testing)
     OpenGLGState::resetState();
 
+#ifndef __EMSCRIPTEN__
     const GLdouble plane[4] = {0.0, 0.0, +1.0, 0.0};
     glClipPlane(GL_CLIP_PLANE0, plane);
+#endif
 
     if (background)
     {
@@ -1009,9 +1029,13 @@ void SceneRenderer::renderScene(bool UNUSED(_lastFrame), bool UNUSED(_sameFrame)
         {
             glDisable(GL_POLYGON_OFFSET_FILL);
             glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+#ifndef __EMSCRIPTEN__
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+#endif
             doRender();
+#ifndef __EMSCRIPTEN__
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+#endif
         }
 
         OpenGLGState::resetState();
@@ -1035,8 +1059,10 @@ void SceneRenderer::renderScene(bool UNUSED(_lastFrame), bool UNUSED(_sameFrame)
     }
 
     // back to original state
+#ifndef __EMSCRIPTEN__
     if (!useHiddenLineOn && useWireframeOn)
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+#endif
     glPopMatrix();
 
     // do depth complexity
@@ -1087,7 +1113,9 @@ static bool setupMapFog()
     if (BZDB.get(StateDatabase::BZDB_FOGMODE) == "none")
     {
         glDisable(GL_FOG);
+#ifndef __EMSCRIPTEN__
         glHint(GL_FOG_HINT, GL_FASTEST);
+#endif
         return false;
     }
     RENDERER.setFogActive(true);
@@ -1115,10 +1143,12 @@ static bool setupMapFog()
         fogColor[0] = fogColor[1] = fogColor[2] = 0.1f;
         fogColor[3] = 0.0f; // has no effect
     }
+#ifndef __EMSCRIPTEN__
     if (BZDB.evalInt("fogEffect") >= 1)
         glHint(GL_FOG_HINT, GL_NICEST);
     else
         glHint(GL_FOG_HINT, GL_FASTEST);
+#endif
 
     // setup GL fog
     glFogi(GL_FOG_MODE, fogMode);
@@ -1161,13 +1191,19 @@ void SceneRenderer::renderDimming()
         else
         {
             OpenGLGState::setStipple(density);
+#ifndef __EMSCRIPTEN__
             glEnable(GL_POLYGON_STIPPLE);
+#endif
         }
         glRectf(-1.0f, -1.0f, +1.0f, +1.0f);
         if (BZDBCache::blend && (useQualityValue >= 1))
             glDisable(GL_BLEND);
         else
+        {
+#ifndef __EMSCRIPTEN__
             glDisable(GL_POLYGON_STIPPLE);
+#endif
+        }
     }
     return;
 }

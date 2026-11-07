@@ -18,7 +18,15 @@
 
 /* common implementation headers */
 #include "network.h"
+#ifndef __EMSCRIPTEN__
 #include <ares.h>
+#else
+/* Emscripten: c-ares is unavailable. Provide minimal shims so the header
+ * still compiles in files that transitively include it. All call sites
+ * that actually depend on c-ares are excluded from the Emscripten build. */
+typedef void* ares_channel;
+struct ares_addrinfo;
+#endif
 
 class AresHandler
 {

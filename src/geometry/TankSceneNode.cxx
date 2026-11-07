@@ -1238,13 +1238,14 @@ void TankSceneNode::TankRenderNode::renderPart(TankPart part)
     if (!isShadow)
         setupPartColor(part);
 
-    // get the list
-    GLuint list;
-    TankShadow shadow = isShadow ? ShadowOn : ShadowOff;
-    list = TankGeometryMgr::getPartList(shadow, part, drawSize, drawLOD);
-
     // draw the part
+    TankShadow shadow = isShadow ? ShadowOn : ShadowOff;
+#ifdef __EMSCRIPTEN__
+    TankGeometryMgr::renderPart(shadow, part, drawSize, drawLOD);
+#else
+    GLuint list = TankGeometryMgr::getPartList(shadow, part, drawSize, drawLOD);
     glCallList(list);
+#endif
 
     // add to the triangle count
     addTriangleCount(TankGeometryMgr::getPartTriangleCount(

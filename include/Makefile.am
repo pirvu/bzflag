@@ -84,6 +84,7 @@ noinst_HEADERS =			\
 	OpenGLMaterial.h		\
 	OpenGLTexture.h			\
 	OpenGLUtils.h			\
+	OpenGLVertexBuffer.h		\
 	OSFile.h			\
 	Pack.h				\
 	ParseColor.h			\

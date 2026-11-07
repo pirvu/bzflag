@@ -462,8 +462,10 @@ void            OpenGLGStateState::resetOpenGLState() const
     }
     if (sorted.hasSphereMap)
     {
+#ifndef __EMSCRIPTEN__
         glDisable(GL_TEXTURE_GEN_S);
         glDisable(GL_TEXTURE_GEN_T);
+#endif
     }
     if (sorted.hasMaterial)
     {
@@ -482,8 +484,10 @@ void            OpenGLGStateState::resetOpenGLState() const
     }
     if (unsorted.hasStipple)
     {
+#ifndef __EMSCRIPTEN__
         glDisable(GL_LINE_STIPPLE);
         glDisable(GL_POLYGON_STIPPLE);
+#endif
     }
     if (!unsorted.hasCulling || unsorted.culling != GL_BACK)
     {
@@ -492,8 +496,10 @@ void            OpenGLGStateState::resetOpenGLState() const
     }
     if (unsorted.hasShading)
         glShadeModel(GL_FLAT);
+#ifndef __EMSCRIPTEN__
     if (unsorted.hasAlphaFunc)
         glDisable(GL_ALPHA_TEST);
+#endif
 }
 
 void            OpenGLGStateState::setOpenGLState(
@@ -557,18 +563,22 @@ void            OpenGLGStateState::setOpenGLState(
         {
             if (!oldState->sorted.hasSphereMap)
             {
+#ifndef __EMSCRIPTEN__
                 glTexGenf(GL_S, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
                 glTexGenf(GL_T, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
                 glEnable(GL_TEXTURE_GEN_S);
                 glEnable(GL_TEXTURE_GEN_T);
+#endif
             }
         }
         else
         {
             if (oldState->sorted.hasSphereMap)
             {
+#ifndef __EMSCRIPTEN__
                 glDisable(GL_TEXTURE_GEN_S);
                 glDisable(GL_TEXTURE_GEN_T);
+#endif
             }
         }
 
@@ -583,8 +593,10 @@ void            OpenGLGStateState::setOpenGLState(
             else
             {
                 sorted.material.execute();
+#ifndef __EMSCRIPTEN__
                 glEnable(GL_LIGHTING);
                 glEnable(GL_COLOR_MATERIAL);
+#endif
             }
         }
         else
@@ -646,16 +658,20 @@ void            OpenGLGStateState::setOpenGLState(
             else
             {
                 OpenGLGState::setStippleIndex(unsorted.stippleIndex);
+#ifndef __EMSCRIPTEN__
                 glEnable(GL_LINE_STIPPLE);
                 glEnable(GL_POLYGON_STIPPLE);
+#endif
             }
         }
         else
         {
             if (oldState->unsorted.hasStipple)
             {
+#ifndef __EMSCRIPTEN__
                 glDisable(GL_LINE_STIPPLE);
                 glDisable(GL_POLYGON_STIPPLE);
+#endif
             }
         }
 
@@ -692,6 +708,7 @@ void            OpenGLGStateState::setOpenGLState(
         }
 
         // alpha func
+#ifndef __EMSCRIPTEN__
         if (unsorted.hasAlphaFunc)
         {
             if (oldState->unsorted.hasAlphaFunc)
@@ -711,6 +728,7 @@ void            OpenGLGStateState::setOpenGLState(
             if (oldState->unsorted.hasAlphaFunc)
                 glDisable(GL_ALPHA_TEST);
         }
+#endif
     }
     else
     {
@@ -744,28 +762,36 @@ void            OpenGLGStateState::setOpenGLState(
         // spherical texture mapping
         if (sorted.hasSphereMap)
         {
+#ifndef __EMSCRIPTEN__
             glTexGenf(GL_S, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
             glTexGenf(GL_T, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
             glEnable(GL_TEXTURE_GEN_S);
             glEnable(GL_TEXTURE_GEN_T);
+#endif
         }
         else
         {
+#ifndef __EMSCRIPTEN__
             glDisable(GL_TEXTURE_GEN_S);
             glDisable(GL_TEXTURE_GEN_T);
+#endif
         }
 
         // lighting and material
         if (sorted.hasMaterial)
         {
             sorted.material.execute();
+#ifndef __EMSCRIPTEN__
             glEnable(GL_LIGHTING);
             glEnable(GL_COLOR_MATERIAL);
+#endif
         }
         else
         {
+#ifndef __EMSCRIPTEN__
             glDisable(GL_LIGHTING);
             glDisable(GL_COLOR_MATERIAL);
+#endif
         }
 
         // blending and blend function
@@ -793,13 +819,17 @@ void            OpenGLGStateState::setOpenGLState(
         if (unsorted.hasStipple)
         {
             OpenGLGState::setStippleIndex(unsorted.stippleIndex);
+#ifndef __EMSCRIPTEN__
             glEnable(GL_LINE_STIPPLE);
             glEnable(GL_POLYGON_STIPPLE);
+#endif
         }
         else
         {
+#ifndef __EMSCRIPTEN__
             glDisable(GL_LINE_STIPPLE);
             glDisable(GL_POLYGON_STIPPLE);
+#endif
         }
 
         // texture mapping
@@ -818,6 +848,7 @@ void            OpenGLGStateState::setOpenGLState(
             glShadeModel(GL_FLAT);
 
         // alpha function
+#ifndef __EMSCRIPTEN__
         if (unsorted.hasAlphaFunc)
         {
             glAlphaFunc(unsorted.alphaFunc, unsorted.alphaRef);
@@ -825,6 +856,7 @@ void            OpenGLGStateState::setOpenGLState(
         }
         else
             glDisable(GL_ALPHA_TEST);
+#endif
     }
 }
 
@@ -1197,7 +1229,9 @@ void            OpenGLGState::setStipple(GLfloat alpha)
 
 void OpenGLGState::setStippleIndex(int index)
 {
+#ifndef __EMSCRIPTEN__
     glCallList(stipples + index);
+#endif
 }
 
 
@@ -1221,6 +1255,9 @@ int OpenGLGState::getMaxSamples()
 
 void OpenGLGState::initStipple(void*)
 {
+#ifdef __EMSCRIPTEN__
+    stipples = INVALID_GL_LIST_ID;
+#else
     stipples = glGenLists(NumStipples);
     for (int i = 0; i < NumStipples; i++)
     {
@@ -1253,6 +1290,7 @@ void OpenGLGState::initStipple(void*)
         glLineStipple(1, lineStipple);
         glEndList();
     }
+#endif
 }
 
 
@@ -1322,6 +1360,7 @@ void OpenGLGState::initContext()
         return;
     }
 
+#ifndef __EMSCRIPTEN__
     GLenum err = glewInit();
     // Running the client using SDL's Wayland driver causes glewInit() to return GLEW_ERROR_NO_GLX_DISPLAY. We do not
     // check for or use GLX extensions, so I think it's safe to allow for this error code.
@@ -1332,6 +1371,7 @@ void OpenGLGState::initContext()
         printf("initContext() Error: %s\n", glewGetErrorString(err));
         return;
     }
+#endif
 
     // call all of the freeing functions first
     logDebugMessage(3,"ContextInitializer::executeFreeFuncs() start\n");
@@ -1365,7 +1405,9 @@ void OpenGLGState::initContext()
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     glEnable(GL_SCISSOR_TEST);
+#ifndef __EMSCRIPTEN__
     glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
+#endif
 }
 
 
@@ -1380,16 +1422,24 @@ void OpenGLGState::initGLState()
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDisable(GL_LINE_SMOOTH);
     glDisable(GL_POINT_SMOOTH);
+#ifndef __EMSCRIPTEN__
     glDisable(GL_LINE_STIPPLE);
     glDisable(GL_POLYGON_STIPPLE);
+#endif
     glEnable(GL_CULL_FACE);
     glShadeModel(GL_FLAT);
+#ifndef __EMSCRIPTEN__
     glDisable(GL_ALPHA_TEST);
+#endif
     glCullFace(GL_BACK);
     // all arrays are enabled by default
     glEnableClientState(GL_VERTEX_ARRAY);
+#ifndef __EMSCRIPTEN__
+    // Under Emscripten, enabling normal/texcoord client-state arrays by default
+    // can confuse the FFP emulation when mixed with immediate-mode rendering.
     glEnableClientState(GL_NORMAL_ARRAY);
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+#endif
 
     glPixelStorei(GL_UNPACK_ALIGNMENT,1);
     glPixelStorei(GL_PACK_ALIGNMENT,1);
@@ -1398,7 +1448,7 @@ void OpenGLGState::initGLState()
 // utility to check if an OpenGL extension is supported on this system
 bool OpenGLGState::initGLExtensions()
 {
-
+#ifndef __EMSCRIPTEN__
     hasAnisotropicFiltering = GLEW_EXT_texture_filter_anisotropic;
 
     if (GLEW_ARB_framebuffer_object)
@@ -1407,6 +1457,7 @@ bool OpenGLGState::initGLExtensions()
         glGetIntegerv(GL_MAX_SAMPLES, &sampleCount);
         maxSamples = sampleCount;
     }
+#endif
 
     return false;
 }

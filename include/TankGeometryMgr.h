@@ -95,6 +95,11 @@ int getPartTriangleCount(TankGeometryEnums::TankShadow shadow,
                          TankGeometryEnums::TankSize size,
                          TankGeometryEnums::TankLOD lod);
 
+void renderPart(TankGeometryEnums::TankShadow shadow,
+                TankGeometryEnums::TankPart part,
+                TankGeometryEnums::TankSize size,
+                TankGeometryEnums::TankLOD lod);
+
 const float* getScaleFactor(TankGeometryEnums::TankSize size);
 }
 
@@ -115,6 +120,11 @@ float getWheelScale();
 float getTreadScale();
 // texcoords
 float getTreadTexLen();
+
+// primitives; glBegin()/glEnd() natively, recorded into vertex buffers
+// under Emscripten
+void doBegin(GLenum mode);
+void doEnd();
 
 // help to scale vertices and normals
 void doVertex3f(GLfloat x, GLfloat y, GLfloat z);

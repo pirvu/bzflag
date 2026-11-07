@@ -20,6 +20,7 @@ libGLKit_la_SOURCES =			\
 	OpenGLMaterial.cxx		\
 	OpenGLTexture.cxx		\
 	OpenGLUtils.cxx		\
+	OpenGLVertexBuffer.cxx		\
 	RenderNode.cxx
 
 EXTRA_DIST = \

@@ -28,6 +28,10 @@
 #include "ConfigFileManager.h"
 #include "clientConfig.h"
 
+#ifdef __EMSCRIPTEN__
+extern "C" void saveConfigToLocalStorage(const char* path);
+#endif
+
 OptionsMenu::OptionsMenu() : guiOptionsMenu(NULL), effectsMenu(NULL),
     cacheMenu(NULL), saveWorldMenu(NULL),
     inputMenu(NULL),
@@ -215,6 +219,14 @@ void OptionsMenu::execute()
             CFGMGR.write(getCurrentConfigFileName());
         else
             CFGMGR.write(alternateConfig);
+#ifdef __EMSCRIPTEN__
+        // Persist config to localStorage so it survives page reloads
+        {
+            std::string configPath = (alternateConfig == "")
+                ? getCurrentConfigFileName() : alternateConfig;
+            saveConfigToLocalStorage(configPath.c_str());
+        }
+#endif
     }
 }
 
